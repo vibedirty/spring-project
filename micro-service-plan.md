@@ -1,22 +1,27 @@
-# Spring Java 微服务拆分计划
+# Spring Java 微服务拆分与学习计划
 
 ## 1. 文档目的
 
-本文档对应 `plan.md` 中的开发规划 191 和 192，用于明确当前 `spring-java` 模块化单体未来拆分为 Spring Cloud 微服务时的：
+本文档对应 `plan.md` 中的开发规划 191 和 192，用于指导当前 `spring-java` 模块化单体逐步演进为 Spring Cloud Alibaba 微服务系统。
 
-- 服务边界和数据归属；
-- 服务之间的同步、异步依赖；
-- 本地事务与跨服务一致性边界；
-- 按业务优先级、实现难度和风险综合确定的拆分顺序；
-- 每个阶段的实施内容、验收标准和回退方式。
+本项目是学习级项目，首要目标不是以最少组件承载当前业务量，而是通过可运行、可验证的阶段任务系统学习：
 
-本文档只制定拆分方案，不在当前阶段实际创建或迁移微服务。
+- API Gateway；
+- 服务注册、发现和配置管理；
+- 服务间调用和客户端负载均衡；
+- 限流、熔断、降级和隔离；
+- JWT 跨服务认证；
+- 消息队列、Outbox 和幂等消费；
+- Saga、补偿任务与分布式事务；
+- 指标、日志、链路追踪和故障演练。
 
-## 2. 拆分目标与约束
+所有微服务改造只在长期 `microservices` 分支演进，不合并回保留单体版本的 `main` 分支。
 
-### 2.1 目标
+## 2. 已确定的方案
 
-第一轮拆分形成 4 个业务微服务和 1 个 API Gateway：
+### 2.1 第一轮服务边界
+
+第一轮形成 4 个业务服务和 1 个 Gateway：
 
 1. `gateway-service`
 2. `account-service`
@@ -24,51 +29,147 @@
 4. `product-service`
 5. `order-service`
 
-拆分完成后，前端继续使用统一 API 地址，Gateway 根据路径把请求路由到对应服务。每个业务服务只能直接读写自己拥有的数据，不能访问其他服务的数据库、Mapper 或 Redis Key。
+其中：
 
-### 2.2 暂不拆分的能力
+- `account-service` 包含 `auth`、`user` 和 `address`。
+- `product-service` 包含 `category`、`product` 和 `stock`。
+- 模拟支付、发货和确认收货暂时属于 `order-service`。
+- 第一轮不单独拆 `inventory-service`、`payment-service` 和 `fulfillment-service`。
 
-第一轮不单独创建以下服务：
+### 2.2 数据库方案
 
-- `inventory-service`：当前库存是 `product` 聚合的一部分，仍由 `product-service` 管理；出现多仓库、库存预占模型或秒杀需求后再独立拆分。
-- `payment-service`：当前是模拟支付，暂时保留在 `order-service`；接入真实支付、退款和对账后再拆分。
-- `fulfillment-service`：当前发货只涉及订单状态及物流字段，暂时保留在 `order-service`。
-- 独立后台管理服务：用户端和管理端接口按业务归属进入同一个微服务，通过角色权限区分。
+第一轮所有服务共享现有 MySQL 实例和 `spring` 数据库，不做物理拆库，也不迁移历史数据。
 
-### 2.3 基本原则
+共享数据库不等于无边界。各服务必须遵守逻辑所有权和单写原则：
 
-- 按业务能力和数据所有权拆分，不按 Controller、Service、Mapper 技术分层拆分。
-- 一个数据表、一个 Redis Key 前缀只能有一个服务作为写入者。
-- 跨服务只保存逻辑 ID，不创建跨库外键。
-- 服务不得共享 Entity、Mapper 和数据库事务。
-- 远程调用不得放在本地数据库事务中长期等待。
-- 所有可重试写接口必须定义业务幂等键。
-- 核心状态转换继续使用包含原状态条件的原子 SQL。
-- 优先采用本地事务、Outbox、幂等消费和补偿任务，不在第一轮引入 XA 或 Seata 全局事务。
-- 每次只迁移一个入口或一组紧密相关的入口，并保留可回退到单体的 Gateway 路由。
+| 服务 | 逻辑拥有的 MySQL 表 | 允许写入者 |
+| --- | --- | --- |
+| `account-service` | `user`、`user_address` | 仅 `account-service` |
+| `product-service` | `category`、`product`、`stock_log` | 仅 `product-service` |
+| `order-service` | `orders`、`order_item`、`order_address`、`order_operate_log`、后续 `outbox_event` | 仅 `order-service` |
+| `cart-service` | 无 MySQL 表 | 不适用 |
 
-## 3. 目标服务和数据归属
+拆分初期允许原单体保留少量临时读取，随后通过 OpenFeign 内部接口替换。新服务接管某张表的写接口后，原单体不得继续写该表。
 
-| 服务 | 主要职责 | MySQL 数据 | Redis 数据 | 暂不拥有的能力 |
-| --- | --- | --- | --- | --- |
-| `gateway-service` | 统一入口、路由、跨域、请求日志、限流、Token 初步校验 | 无 | 可选的网关限流数据 | 不实现业务逻辑，不直接查业务数据库 |
-| `account-service` | 注册、登录、JWT、退出、登录限流、用户、管理员、收货地址 | `user`、`user_address` | `auth:jwt:session:*`、`auth:login:failures:*` | 不查询订单、商品和购物车 |
-| `cart-service` | 购物车增删改查、选中状态、购物车金额展示 | 无 | `cart:{userId}` | 不拥有商品价格和库存最终值 |
-| `product-service` | 分类、商品、价格、上下架、商品缓存、库存调整、订单库存预占/释放、销量 | `category`、`product`、`stock_log`，以及新增的库存幂等记录表 | `cache:product:*`、商品缓存锁 | 不创建或修改订单 |
-| `order-service` | 创建订单、订单查询、模拟支付、取消、超时、发货、确认收货、订单操作日志 | `orders`、`order_item`、`order_address`、`order_operate_log`、新增的 `outbox_event` | `order:idempotency:*`、`lock:order:status:*`、订单超时 ZSet | 不直接修改用户、地址、商品和库存表 |
+第一轮保留现有数据库外键。后续学习“每服务独立 Schema/数据库”时，再删除跨服务外键并执行数据迁移实验。
 
-拆库后以下字段保留为逻辑引用，不再建立跨服务数据库外键：
+### 2.3 Redis 数据归属
 
-- `orders.user_id`
-- `order_item.product_id`
-- `order_address.source_address_id`
-- `stock_log.business_no`
+所有服务可以共享同一个 Redis 实例，但必须按 Key 前缀划分逻辑所有权：
 
-订单明细、订单地址和操作者名称必须继续保存业务快照，不能在查询历史订单时依赖商品或账户服务返回当前值。
+| 服务 | Redis Key |
+| --- | --- |
+| `account-service` | `auth:jwt:session:*`、`auth:login:failures:*` |
+| `cart-service` | `cart:{userId}` |
+| `product-service` | `cache:product:*`、商品缓存锁 |
+| `order-service` | `order:idempotency:*`、`lock:order:status:*`、订单超时 ZSet |
+| `gateway-service` | 可选的网关限流数据 |
 
-## 4. 服务依赖方向
+### 2.4 JWT 方案
 
-目标同步依赖如下：
+第一轮保持当前对称密钥 JWT：
+
+- `account-service` 负责签发 Token；
+- Gateway 和各业务服务使用同一 Secret 验签；
+- Gateway 必须原样转发 `Authorization` Header；
+- 业务服务仍需进行必要的本地鉴权，不能只依赖前端提交的用户 ID。
+
+完成基础拆分后，再增加非对称签名、密钥轮换和 Token 撤销事件实验。
+
+## 3. 技术栈和学习阶段
+
+| 能力 | 技术 | 首次引入阶段 |
+| --- | --- | --- |
+| API 网关 | Spring Cloud Gateway | P1 |
+| 注册中心 | Nacos Discovery | P0～P1 |
+| 配置中心 | Nacos Config | P1 |
+| 服务调用 | OpenFeign | P3 |
+| 客户端负载均衡 | Spring Cloud LoadBalancer | P1、P3 |
+| 限流、熔断和降级 | Sentinel | P3 |
+| 消息队列 | RocketMQ | P6 |
+| 可靠事件 | Outbox + 幂等消费 | P6 |
+| 跨服务流程 | Saga + 补偿任务 | P6 |
+| 分布式事务对比 | Seata AT/TCC 实验 | P7 |
+| 健康检查和指标 | Actuator + Micrometer | P1 起持续完善 |
+| 链路追踪 | Micrometer Tracing | P7 |
+| 缓存和锁 | Redis + Redisson | 沿用并按服务归属迁移 |
+
+## 4. 版本基线
+
+### 4.1 推荐稳定组合
+
+为了使用已经正式发布的 Spring Cloud Alibaba 版本，`microservices` 分支推荐统一到以下学习基线：
+
+| 组件 | 版本 |
+| --- | --- |
+| Java | 17 |
+| Spring Boot | 4.0.0 |
+| Spring Cloud | 2025.1.0 |
+| Spring Cloud Alibaba | 2025.1.0.0 |
+| Nacos Client | 由 Spring Cloud Alibaba BOM 管理 |
+
+当前单体使用 Spring Boot 4.1.0。P0 需要先在 `microservices` 分支验证降级到上述稳定组合是否能通过构建和回归测试，再让 Gateway、单体和后续服务采用统一 BOM。
+
+如果不接受降级，则只能等待兼容 Spring Boot 4.1.0 + Spring Cloud 2025.1.2 的 Spring Cloud Alibaba 稳定版本，或在学习环境使用 Snapshot。默认路线优先选择稳定发行版，不使用 Snapshot 作为长期基线。
+
+### 4.2 版本管理规则
+
+- 使用 Maven BOM 管理 Spring Cloud 和 Spring Cloud Alibaba 版本。
+- 业务模块不得单独覆盖 Nacos、Sentinel、RocketMQ、Seata 等传递依赖版本。
+- 所有服务统一 Java 17。
+- 每次升级先创建独立分支并执行全量回归测试。
+- 版本组合、升级原因和验证结果写入依赖说明文档。
+
+## 5. 目标架构
+
+### 5.1 开发环境部署基线
+
+当前学习阶段只将 Nacos 运行在 Docker 中，不将 Gateway、原单体和业务微服务容器化。
+
+```text
+macOS 宿主机
+  |-- Java 应用：Gateway、原单体和各业务服务
+  |     `-- 通过 IDE 或 Maven 直接启动，使用不同端口
+  |
+  `-- Docker
+        `-- Nacos Server（单机模式）
+```
+
+约定：
+
+- Java 应用统一在宿主机 JVM 运行，便于 IDE 调试、热更新和多实例实验。
+- Java 应用通过 `127.0.0.1:8848` 访问 Nacos。
+- 同一宿主机上的服务实例可以向 Nacos 注册 `127.0.0.1` 和各自端口。如果 macOS 受 VPN 或虚拟网卡影响选错 IP，则通过环境变量显式指定注册 IP。
+- Nacos 客户端端口使用 `8848`，gRPC 端口使用 `9848`。Nacos 3 控制台的容器端口 `8080` 映射到宿主机 `8849`，避免与原单体的 `8080` 冲突。
+- P0 的 Docker Compose 只管理 Nacos；MySQL 和 Redis 继续沿用当前项目的本地运行方式。
+- 微服务容器化不作为当前各阶段的验收条件；如后续需要学习容器编排，再建立独立实验。
+
+第一阶段：Gateway 通过 Nacos 发现原单体。
+
+```text
+                         Nacos
+                 注册中心 + 配置中心
+                      ^         ^
+                      |         |
+前端 ---> gateway-service ---> spring-java-service
+              |                  实例 1
+              `---------------> spring-java-service
+                                 实例 2
+```
+
+账户服务拆出后：
+
+```text
+                             Nacos
+                    注册、发现、配置管理
+                   /         |          \
+                  v          v           v
+前端 ---> gateway-service  account-service  spring-java-service
+                              ^                  |
+                              `---- Feign -------'
+```
+
+全部服务拆出后：
 
 ```text
 前端
@@ -76,381 +177,511 @@
   v
 gateway-service
   |-- account-service
-  |-- product-service
   |-- cart-service -----> product-service
+  |-- product-service
   `-- order-service ----> account-service
                     |---> cart-service
                     `---> product-service
+
+所有应用注册到 Nacos；配置由 Nacos Config 分组管理。
+订单事件通过 RocketMQ 传递。
 ```
 
-约束如下：
+## 6. 综合优先级和难度
 
-- `product-service` 不反向调用 `order-service`。
-- `account-service` 不依赖其他业务服务。
-- `cart-service` 通过商品批量查询接口取得名称、图片、价格、状态和展示库存。
-- `order-service` 是下单流程的编排者，负责调用地址快照、购物车、商品报价和库存预占接口。
-- 商品销量更新、购物车清理等非强一致副作用优先使用异步事件。
+难度采用 1～5 级，数值越大表示越困难。排序同时考虑学习依赖、业务耦合和阶段可验证性，不按当前业务体量删减学习内容。
 
-## 5. 综合排序
-
-排序综合考虑以下因素：
-
-- 业务优先级：是否为其他服务提供基础能力；
-- 实现难度：代码量、配置量和数据迁移复杂度；
-- 依赖数量：是否需要先稳定其他服务的 API；
-- 事务风险：是否会破坏当前本地事务的一致性；
-- 回退难度：迁移失败后能否快速切回单体。
-
-难度采用 1～5 级，数值越大表示越困难。
-
-| 综合顺序 | 阶段 | 对象 | 优先级 | 难度 | 主要原因 |
+| 顺序 | 阶段 | 任务 | 优先级 | 难度 | 主要学习内容 |
 | --- | --- | --- | --- | --- | --- |
-| 0 | P0 | 单体边界准备 | 最高 | 3 | 是所有服务拆分的共同前置条件，可以先暴露跨模块依赖而不改变部署方式 |
-| 1 | P1 | `gateway-service` | 最高 | 1 | 不迁移业务数据，能够为后续逐路由切换和回退建立统一入口 |
-| 2 | P2 | `account-service` | 高 | 2 | 数据边界完整、内部事务独立，并为后续服务提供统一身份能力 |
-| 3 | P3 | `cart-service` | 中高 | 2 | 数据已独立在 Redis，代码较少；需要账户身份和商品批量查询契约 |
-| 4 | P4 | `product-service` | 中高 | 4 | 同时包含分类、商品、缓存、库存和销量，需要补充库存业务幂等能力 |
-| 5 | P5 | `order-service` | 高 | 5 | 当前依赖最多，并且创建、取消、支付流程需要从本地事务改造成 Saga 和最终一致性 |
-| 6 | P6 | 微服务治理收尾 | 中 | 3 | 补齐消息可靠性、追踪、告警、压测、故障演练和独立部署能力 |
+| 0 | P0 | 环境、版本和 Nacos 基线 | 最高 | 2 | BOM、版本兼容、Nacos 部署、服务命名和配置模型 |
+| 1 | P1 | Gateway + Nacos | 最高 | 2 | Gateway、注册发现、`lb://`、动态路由、多实例负载均衡 |
+| 2 | P2 | Account Service | 高 | 3 | 业务服务抽取、共享数据库边界、JWT 跨服务使用、路由切换 |
+| 3 | P3 | 服务通信与治理 | 高 | 3 | OpenFeign、LoadBalancer、Sentinel、超时、熔断和降级 |
+| 4 | P4 | Cart Service | 中高 | 3 | Redis 数据所有权、商品批量查询、远程依赖降级 |
+| 5 | P5 | Product Service | 高 | 4 | 分类、商品、库存、缓存、幂等库存接口 |
+| 6 | P6 | Order Service | 最高 | 5 | RocketMQ、Outbox、Saga、幂等消费、补偿任务 |
+| 7 | P7 | 高级实验和可观测性 | 中高 | 4 | Seata、链路追踪、故障演练、独立 Schema 对比实验 |
 
-这不是单纯按难度从低到高排序。例如 `account-service` 的认证改造多于购物车，但它是其他服务识别用户身份的前置能力，因此优先于 `cart-service`。
-
-## 6. 分阶段实施计划
-
-### P0：把单体整理为可拆分的模块化单体
-
-#### 目标
-
-在不改变部署方式和外部 API 的前提下，消除跨越未来服务边界直接访问 Mapper、Entity 和内部 Service 的行为，使未来的远程调用替换点清晰可见。同属未来 `product-service` 的分类、商品和库存模块仍可保留合理的内部协作。
-
-#### 主要工作
-
-1. 建立模块端口接口，例如：
-   - `AccountQueryPort`
-   - `AddressQueryPort`
-   - `ProductQueryPort`
-   - `InventoryPort`
-   - `CartPort`
-2. 订单模块通过端口获取用户、地址、购物车、商品和库存能力，不再直接依赖 `UserMapper`、`ProductMapper`、`AddressService`、`CartService` 或 `StockService`。
-3. 购物车通过 `ProductQueryPort` 批量查询商品，禁止逐商品调用。
-4. 定义独立的跨模块请求和响应模型，不跨模块传递持久化 Entity。
-5. 明确所有 Redis Key 的归属、TTL、序列化格式和清理策略。
-6. 为跨服务写操作设计幂等键：
-   - 创建订单：`userId + idempotencyToken`
-   - 预占库存：`orderNo`
-   - 释放库存：`orderNo`
-   - 销量增加：`orderNo`
-7. 设计 `outbox_event` 表和事件状态机，但本阶段可先不接入消息中间件。
-8. 统一业务配置。当前需求规定订单付款窗口为 20 分钟，而代码使用 5 分钟，应在拆分前统一并改为外部配置。
-9. 保留并执行当前关键并发、幂等和全流程测试，建立拆分前基线。
-
-#### 验收标准
-
-- 主业务流程仍以单体方式运行通过。
-- 不存在跨越未来服务边界的 Mapper 调用。
-- 订单模块不再依赖用户、地址、商品和购物车的持久化 Entity。
-- 商品批量查询、库存预占和释放的接口契约已经确定。
-- 输出服务依赖矩阵、表归属清单和 Redis Key 归属清单。
-
-### P1：创建 `gateway-service`
-
-#### 目标
-
-建立统一访问入口，但暂时将全部业务请求转发给原 `spring-java` 单体。
-
-#### 主要工作
-
-1. 创建 Spring Cloud Gateway 工程。
-2. 配置前端统一 API 地址和 CORS。
-3. 第一阶段使用兜底路由：`/api/** -> spring-java`。
-4. 转发请求 ID、Trace ID 和必要的认证头。
-5. 配置连接超时、响应超时、请求体大小和统一网关错误响应。
-6. 增加健康检查和路由日志。
-7. 不在 Gateway 中编写订单、商品等业务逻辑。
-
-#### 验收标准
-
-- 用户端和管理端只访问 Gateway 即可完成现有全流程。
-- 直接访问单体和通过 Gateway 访问的业务结果一致。
-- Gateway 停止或路由切回后，不影响单体独立运行。
-
-### P2：拆分 `account-service`
-
-#### 目标
-
-迁移认证、用户和地址能力，形成第一个独立业务服务。
-
-#### 主要工作
-
-1. 迁移 `auth`、`user` 和 `address` 模块。
-2. 迁移 `user`、`user_address` 表及 `auth:*` Redis 数据。
-3. 将 JWT 改成非对称签名：
-   - `account-service` 使用私钥签发；
-   - Gateway 和其他服务使用公钥本地验签；
-   - 业务请求不因验签而同步调用账户服务。
-   - 立即退出能力由 Gateway 调用账户服务的 Token 状态接口或消费 Token 撤销事件实现，其他服务不得直接读取账户服务的 Redis。
-4. 提供订单需要的内部接口：
-   - 按当前用户和地址 ID 查询地址快照；
-   - 按用户 ID 批量查询必要的用户展示信息。
-5. 从订单数据库移除 `orders.user_id -> user.id` 的物理外键，保留普通索引。
-6. Gateway 将认证和地址路径切换到 `account-service`。
-7. 单体中的临时适配器通过 HTTP 客户端调用 `account-service`，不再读账户数据库。
-
-#### 验收标准
-
-- 注册、用户登录、管理员登录、退出和登录限流通过。
-- 地址增删改查和默认地址事务通过。
-- 单体能够验证账户服务签发的 JWT。
-- 创建订单能够取得并保存地址快照。
-- 停止账户数据库访问权限后，单体不再直接读取 `user` 和 `user_address`。
-
-### P3：拆分 `cart-service`
-
-#### 目标
-
-迁移购物车 Redis 数据和接口，建立第一个无 MySQL 的轻量业务服务。
-
-#### 主要工作
-
-1. 迁移购物车增删改查和选中状态接口。
-2. `cart:{userId}` 仅允许 `cart-service` 写入。
-3. 通过 JWT 本地验签取得当前用户 ID，不接受前端直接指定用户 ID。
-4. 调用商品批量查询接口取得商品展示数据；P4 完成前由原单体的商品模块提供内部接口，P4 完成后把客户端地址切换到 `product-service`。
-5. 商品查询失败时返回明确的降级结果，不能把远程超时误判成商品已删除。
-6. 提供按用户和商品 ID 列表幂等清理购物车的内部接口。
-7. Gateway 将购物车路径切换到 `cart-service`。
-
-#### 验收标准
-
-- 原有购物车数据可以继续读取或按迁移方案平滑转换。
-- 商品下架、删除、涨价和库存不足能够正确反映到购物车。
-- 商品服务超时时不会损坏购物车原始数据。
-- 重复清理购物车不会报错或删除非目标商品。
-
-### P4：拆分 `product-service`
-
-#### 目标
-
-整体迁移分类、商品、库存、商品缓存和库存日志，为订单服务提供可幂等的商品与库存能力。
-
-#### 主要工作
-
-1. 迁移 `category`、`product` 和 `stock` 模块。
-2. 迁移 `category`、`product`、`stock_log` 表和商品缓存 Redis Key。
-3. 提供内部批量商品报价接口，返回：
-   - 商品 ID、名称、图片；
-   - 当前价格和状态；
-   - 当前可售库存；
-   - 报价版本或更新时间。
-4. 提供按 `orderNo` 幂等的库存接口：
-   - 预占/扣减库存；
-   - 释放/恢复库存；
-   - 查询业务处理结果。
-5. 新增库存业务幂等记录。不能仅依靠 `stock_log.business_no`，因为一个订单可以对应多个商品日志；建议以 `business_no + operation` 标识整次请求，并为每个商品保存明细。
-6. 商品上架校验继续由商品服务负责。
-7. 订单只提交商品 ID 和数量，商品服务重新校验状态和库存。
-8. 销量改为消费 `OrderPaid` 事件后幂等增加，不再由订单事务直接更新商品表。
-9. Gateway 将分类、商品和库存管理路径切换到 `product-service`。
-
-#### 验收标准
-
-- 用户端和管理端商品、分类、库存接口全部通过。
-- 并发库存扣减不会超卖。
-- 相同 `orderNo` 重复预占不会重复扣减。
-- 相同 `orderNo` 重复释放不会重复恢复。
-- 商品缓存只能由 `product-service` 读写和清理。
-- 单体停止访问商品数据库后，购物车和订单仍能通过接口取得商品数据。
-
-### P5：拆分 `order-service`
-
-#### 目标
-
-迁移订单全流程，将原单数据库事务改造成服务内本地事务加跨服务 Saga。
-
-#### 主要工作
-
-1. 迁移订单创建、查询、支付、取消、超时、发货和确认收货能力。
-2. 迁移所有订单表、订单 Redis Key 和定时任务。
-3. 在订单数据库建立 `outbox_event`，业务状态和待发送事件在同一个本地事务中提交。
-4. 增加必要的中间状态，例如：
-   - `PENDING_STOCK`：订单已创建，等待库存预占；
-   - `CANCELLING`：订单已进入取消流程，等待库存释放；
-   - 可选 `CREATE_FAILED`：订单创建失败且无需支付。
-5. 创建订单流程改造为同步 Saga：
+推荐顺序：
 
 ```text
-获取购物车、地址和商品报价
+P0 环境和版本基线
+  -> P1 Gateway + Nacos
+  -> P2 Account Service
+  -> P3 OpenFeign + Sentinel
+  -> P4 Cart Service
+  -> P5 Product Service
+  -> P6 Order Service + RocketMQ + Saga
+  -> P7 Seata、Tracing 和故障演练
+```
+
+## 7. 分阶段实施计划
+
+### P0：环境、版本和 Nacos 基线
+
+#### 目标
+
+建立统一、可重复的微服务开发环境，验证稳定版本组合，并在不改变业务路由的前提下启动 Nacos。
+
+#### 主要任务
+
+1. 在 `microservices` 分支创建 `feature/ms-p0-environment`。
+2. 记录当前 Java 17、MySQL、Redis 和单体测试基线；已知的订单幂等 TTL 测试约定可以作为已接受差异记录。
+3. 创建独立的 Maven 父工程和服务聚合目录。仓库根目录不是 Maven 工程；P0 只创建聚合 POM，各服务目录在对应阶段开始时再创建：
+
+```text
+spring-cloud-backend/
+  pom.xml                         # 统一版本和 Reactor 入口
+  spring-java/                    # 迁移期间保留的模块化单体
+  spring-cloud-services/
+    pom.xml                       # 后续微服务模块聚合入口
+```
+
+4. 在父 POM 中导入 Spring Cloud 和 Spring Cloud Alibaba BOM。
+5. 在 `microservices` 分支验证 `spring-java` 使用稳定版本组合后的编译、测试和启动。
+6. 使用只包含 Nacos 的 Docker Compose 启动 Nacos 单机模式，并通过 Docker Volume 持久化必要数据。Gateway、原单体和后续业务服务均不创建 Docker 镜像。
+7. 学习并定义 Nacos：
+   - Namespace：区分 `dev`、`test`；
+   - Group：区分基础配置和业务服务配置；
+   - Data ID：按服务命名，环境由 Namespace 唯一表达；
+   - 服务名、实例 IP、端口和元数据。
+8. 规划端口，建议：
+   - Nacos Client/API：`8848`
+   - Nacos Console：`8849`（映射容器端口 `8080`）
+   - Nacos gRPC：`9848`
+   - Gateway：`9000`
+   - 原单体实例：`8080`、`8081`
+   - Account：`8101`
+   - Cart：`8102`
+   - Product：`8103`
+   - Order：`8104`
+9. 为每个应用保留本地最小配置，其余配置逐步迁入 Nacos Config。
+
+#### 验收标准
+
+- Nacos Console 可以访问。
+- Nacos 重启后配置仍可恢复。
+- Nacos 是 P0 中唯一由 Docker Compose 管理的组件，控制台与原单体没有端口冲突。
+- Gateway、原单体和业务服务可以在宿主机 JVM 中启动并访问 `127.0.0.1:8848`。
+- Maven BOM 生效且没有手工覆盖核心组件版本。
+- 单体在选定版本基线上能够构建、启动并完成主要回归测试。
+- 形成环境启动、停止、重置和排错说明。
+
+### P1：Gateway + Nacos
+
+#### 目标
+
+让前端通过 Gateway 访问原单体，并完整学习服务注册、发现、动态路由和客户端负载均衡。
+
+#### 主要任务
+
+1. 创建 `feature/ms-p1-gateway`。
+2. 创建 `gateway-service`，接入：
+   - Spring Cloud Gateway；
+   - Nacos Discovery；
+   - Nacos Config；
+   - Actuator。
+3. 让 `spring-java` 以 `spring-java-service` 注册到 Nacos。
+4. 让 Gateway 以 `gateway-service` 注册到 Nacos。
+5. 初始路由全部转发给原单体：
+
+```text
+/api/** -> lb://spring-java-service
+```
+
+6. 将 Gateway 路由、超时和 CORS 配置放入 Nacos Config。
+7. 保证 Gateway 原样转发：
+   - `Authorization`；
+   - Request ID / Trace ID；
+   - 请求体和查询参数；
+   - 业务错误响应。
+8. 在宿主机 JVM 中启动两个不同端口的 `spring-java-service` 实例，验证 LoadBalancer 分发请求。
+9. 进行服务上下线实验：
+   - 停止一个实例；
+   - 观察 Nacos 健康状态；
+   - 验证 Gateway 不再向失效实例转发。
+10. 修改 Nacos 中的路由或超时配置，验证配置加载行为。
+11. 将用户端和管理端 API 地址统一改为 Gateway 地址。
+
+#### 验收标准
+
+- 两个前端只访问 Gateway 即可完成现有业务流程。
+- Gateway 不连接业务 MySQL，也不包含业务 Service。
+- Nacos 中可以看到 Gateway 和单体实例。
+- `lb://spring-java-service` 路由正常。
+- 单体多实例能够被轮询或按实际负载均衡策略访问。
+- 一个实例下线不会导致全部请求失败。
+- Gateway 路由可以回退为原单体固定地址。
+
+### P2：Account Service，共享数据库
+
+#### 目标
+
+抽取第一个业务服务，学习服务注册、共享数据库下的数据所有权、JWT 跨服务认证和 Gateway 路由切换。
+
+#### 主要任务
+
+1. 创建 `feature/ms-p2-account`。
+2. 创建 `account-service`，迁移或重构以下模块：
+   - `auth`
+   - `user`
+   - `address`
+3. 迁移必要的公共能力，但禁止共享 Mapper、Entity 和业务 Service：
+   - 统一响应；
+   - 错误编码和异常处理；
+   - JWT 基础配置；
+   - MyBatis-Plus 配置；
+   - 日志和健康检查。
+4. `account-service` 继续连接现有 `spring` 数据库和 Redis。
+5. 约定 `account-service` 是 `user`、`user_address` 以及 `auth:*` Key 的唯一写入者。
+6. 保持现有公开 API 路径和响应结构。
+7. 使用当前 JWT Secret 签发 Token，并验证 Gateway、原单体和账户服务对同一 Token 的解析一致。
+8. Gateway 切换路由：
+
+```text
+/api/auth/**        -> lb://account-service
+/api/admin/auth/**  -> lb://account-service
+/api/addresses/**   -> lb://account-service
+其他 /api/**        -> lb://spring-java-service
+```
+
+9. 原单体中的认证和地址 Controller 停止对外提供，避免重复处理同一路径；代码可先通过配置关闭，稳定后再删除。
+10. 第一小步允许订单暂时只读 `user`、`user_address`，但不得继续写入账户数据。
+
+#### 验收标准
+
+- 注册、普通用户登录、管理员登录、退出和登录限流通过。
+- 地址增删改查和默认地址事务通过。
+- 账户服务和原单体都能识别账户服务签发的 JWT。
+- Nacos 可以看到多个 `account-service` 实例。
+- Gateway 能在账户服务实例间负载均衡。
+- 原单体不再对外处理账户和地址写接口。
+- 停止一个账户服务实例后，认证请求仍可由其他实例处理。
+
+### P3：OpenFeign、LoadBalancer 和 Sentinel
+
+#### 目标
+
+消除原单体对账户表的直接读取，并通过可观察的故障实验学习同步服务调用、超时、重试、熔断和降级。
+
+#### 主要任务
+
+1. 创建 `feature/ms-p3-service-governance`。
+2. `account-service` 提供内部接口：
+
+```text
+GET /internal/users/{userId}/summary
+GET /internal/users/{userId}/addresses/{addressId}
+```
+
+3. 返回稳定的内部 DTO，例如 `UserSummary`、`AddressSnapshot`，不暴露持久化 Entity。
+4. 原单体使用 OpenFeign 按服务名调用 `account-service`。
+5. 通过 Feign RequestInterceptor 传递认证和 Request ID。
+6. 配置连接超时、读取超时和日志级别。
+7. 地址快照远程查询放在订单本地数据库事务开始之前。
+8. 替换订单模块中的 `UserMapper` 和 `AddressService` 跨边界调用。
+9. 引入 Sentinel Dashboard，并为 Gateway 和 Feign 调用设计：
+   - QPS 限流；
+   - 并发线程数限制；
+   - 慢调用比例熔断；
+   - 异常比例熔断；
+   - 自定义 BlockHandler 和 Fallback。
+10. 将 Sentinel 规则持久化到 Nacos，避免应用重启后丢失。
+11. 完成故障实验：
+   - 停止全部账户实例；
+   - 人为增加接口延迟；
+   - 制造超过阈值的 QPS；
+   - 观察熔断打开、半开和恢复。
+
+#### 验收标准
+
+- 原单体不再直接读取 `user`、`user_address`。
+- OpenFeign 能通过 Nacos 服务名发现并调用账户服务。
+- 多个账户实例之间存在客户端负载均衡。
+- 超时、限流、熔断和业务错误能够被区分。
+- 写请求不进行无条件自动重试。
+- Sentinel 规则可以从 Nacos 恢复。
+- 历史订单仍依靠订单快照展示，不依赖账户服务在线。
+
+### P4：Cart Service
+
+#### 目标
+
+迁移购物车接口和 Redis 数据所有权，学习无 MySQL 微服务、跨服务批量查询和依赖降级。
+
+#### 主要任务
+
+1. 创建 `cart-service` 并注册到 Nacos。
+2. 迁移购物车增删改查、选中状态和金额展示。
+3. `cart:{userId}` 仅允许 `cart-service` 写入。
+4. 通过 JWT 本地验签取得用户 ID，不接受前端直接指定用户 ID。
+5. 在原单体商品模块先提供内部批量商品查询接口。
+6. `cart-service` 使用 OpenFeign 批量取得商品名称、图片、价格、状态和库存，禁止 N+1 调用。
+7. 为商品查询配置 Sentinel 超时、熔断和降级。
+8. 区分“商品不存在”和“商品服务暂时不可用”，远程故障不能损坏购物车原始数据。
+9. 提供按用户和商品 ID 列表幂等清理购物车的内部接口。
+10. Gateway 将购物车路径切换到 `cart-service`。
+
+#### 验收标准
+
+- 原有 Redis 购物车数据可以继续使用。
+- 商品下架、涨价和库存不足能正确反映到购物车。
+- 商品服务超时不会把商品永久标记为已删除。
+- 多个购物车实例可以共享 Redis 并正常处理请求。
+- 重复清理购物车不会产生错误副作用。
+
+### P5：Product Service
+
+#### 目标
+
+迁移分类、商品、库存、缓存和库存日志，学习共享数据库单写边界、缓存一致性和跨服务幂等写接口。
+
+#### 主要任务
+
+1. 创建 `product-service` 并注册到 Nacos。
+2. 迁移 `category`、`product`、`stock` 模块及相关接口。
+3. `product-service` 成为 `category`、`product`、`stock_log` 的唯一写入者。
+4. 迁移商品缓存和缓存锁的 Redis Key 所有权。
+5. 将 Cart 使用的内部商品查询从原单体切换到 `product-service`。
+6. 提供批量商品报价接口，返回商品快照、当前价格、状态和可售库存。
+7. 提供按 `orderNo` 幂等的库存能力：
+   - 扣减/预占库存；
+   - 恢复/释放库存；
+   - 查询业务处理结果。
+8. 新增库存业务幂等记录。不能只依靠 `stock_log.business_no`，因为一个订单可能产生多条商品日志。
+9. 为库存接口配置合理的超时和 Sentinel 保护，但不能通过普通降级结果伪造扣减成功。
+10. Gateway 将分类、商品和库存管理路径切换到 `product-service`。
+
+#### 验收标准
+
+- 用户端和管理端分类、商品、库存接口通过。
+- 并发扣减不会超卖。
+- 相同 `orderNo` 重复扣减不会重复减少库存。
+- 相同 `orderNo` 重复恢复不会重复增加库存。
+- 调用方超时后可以查询库存请求最终结果。
+- 原单体停止写商品相关表和商品缓存。
+
+### P6：Order Service、RocketMQ、Outbox 和 Saga
+
+#### 目标
+
+迁移订单全流程，通过订单和库存协作系统学习消息队列、可靠事件、最终一致性、幂等消费和 Saga 补偿。
+
+#### 主要任务
+
+1. 创建 `order-service` 并注册到 Nacos。
+2. 迁移订单创建、查询、支付、取消、超时、发货和确认收货。
+3. `order-service` 成为所有订单表及订单 Redis Key 的唯一写入者。
+4. 部署 RocketMQ NameServer、Broker 和管理控制台。
+5. 在订单数据库增加 `outbox_event`，业务状态和待发送事件在同一本地事务中提交。
+6. 实现 Outbox 发布任务、发送状态、退避重试和失败告警。
+7. 实现消费幂等记录、重复消息测试、失败重试和死信处理。
+8. 设计并发布事件：
+   - `OrderCreated`
+   - `OrderPaid`
+   - `OrderCancelled`
+   - `CartClearRequested`
+   - `OrderTimeoutScheduled`
+9. 创建订单流程改造成 Saga：
+
+```text
+查询购物车、地址和商品报价
         |
         v
 本地创建 PENDING_STOCK 订单及快照
         |
         v
-product-service 按 orderNo 幂等预占库存
+product-service 按 orderNo 幂等扣减库存
         |
-        |-- 成功 --> PENDING_PAYMENT + 超时事件 + 清购物车事件
+        |-- 成功 --> PENDING_PAYMENT + Outbox 事件
         `-- 失败 --> CREATE_FAILED/CANCELLED
 ```
 
-6. 如果库存预占成功但订单更新失败，调用幂等库存释放，并由补偿任务持续核对未完成状态。
-7. 取消和超时流程改造为：条件更新订单状态、可靠请求库存释放、完成取消；库存释放失败时保持可重试状态。
-8. 支付仍在订单服务内完成条件状态更新，并通过 `OrderPaid` Outbox 事件更新商品销量。
-9. 购物车清理、订单超时注册和业务事件不得只依赖内存中的 `afterCommit` 回调，应由 Outbox 或补偿扫描提供持久化重试。
-10. Gateway 将订单路径切换到 `order-service`，原单体退出业务流量。
+10. 增加必要的中间状态，例如 `PENDING_STOCK`、`CANCELLING` 和可选 `CREATE_FAILED`。
+11. 库存扣减成功但订单更新失败时，执行幂等恢复并由补偿任务持续核对。
+12. 支付通过 `OrderPaid` 事件更新商品销量。
+13. 下单成功通过 `CartClearRequested` 幂等清理购物车。
+14. 订单超时仍以 MySQL 为最终依据，Redis 和消息失败时由补偿任务兜底。
+15. Gateway 将订单路径切换到 `order-service`，原单体退出业务流量。
 
 #### 验收标准
 
-- 下单、支付、取消、超时、发货、收货全流程通过。
-- 创建订单重复请求不会重复生成订单或扣减库存。
-- 支付与取消并发时只有一个状态转换成功。
+- 订单全流程通过。
+- 重复下单不会重复创建订单或扣库存。
+- 支付和取消竞争只能有一个成功状态。
 - 主动取消与超时取消并发时库存只恢复一次。
-- 任意一次远程调用超时后，系统能够通过重试或补偿达到一致状态。
-- 删除 Redis 超时成员后，MySQL 补偿任务仍能处理过期订单。
-- 订单查询完全依赖订单快照，不要求账户或商品服务在线。
+- 重复 RocketMQ 消息不会重复增加销量或清理非目标购物车数据。
+- Broker 暂停后 Outbox 事件能够在恢复后继续发送。
+- 任意远程调用超时后，系统最终可以通过查询、重试或补偿达到一致状态。
+- 历史订单查询不依赖账户、购物车和商品服务在线。
 
-### P6：微服务治理与部署收尾
+### P7：Seata、独立 Schema、链路追踪和故障演练
 
 #### 目标
 
-让已拆分的服务具备可观察、可恢复和可独立部署能力。
+在主流程已经采用 Saga 后，通过对比实验理解不同分布式事务方案和完整微服务可观测性。
 
-#### 主要工作
+#### 主要任务
 
-1. 根据实际部署环境选择服务发现和配置管理方案；如果运行在 Kubernetes，可优先使用平台原生能力，不重复建设注册中心。
-2. 同步调用使用明确的连接超时、读取超时、有限重试和熔断策略。
-3. 写请求只有在满足幂等条件时才允许自动重试。
-4. 使用消息中间件承载 Outbox 事件，并实现幂等消费和死信处理。
-5. 统一 Trace ID、结构化日志、Actuator、指标和告警。
-6. 每个服务使用独立数据库账号；在条件允许时再迁移为独立数据库实例。
-7. 执行故障演练：账户不可用、商品超时、库存响应丢失、消息重复、Redis 数据丢失和单服务重启。
-8. 核对当前 Spring Boot 版本与所选 Spring Cloud release train、Gateway、OpenFeign、MyBatis-Plus 和观测组件的兼容性后，再锁定依赖版本。
+1. 创建独立实验分支，不直接替换已验证的 Saga 主流程。
+2. 使用 Seata AT 模式实现一次订单与库存跨服务事务实验。
+3. 选择一个小流程实现 TCC，理解 Try、Confirm、Cancel 和空回滚、防悬挂、幂等。
+4. 对比：
+   - 普通 `@Transactional`；
+   - Seata AT；
+   - TCC；
+   - Saga + Outbox + 补偿。
+5. 在同一 MySQL 实例建立独立 Schema，模拟每服务独立数据库并删除跨服务外键。
+6. 引入 Micrometer Tracing，在 Gateway、Feign 和 RocketMQ 链路中传递 Trace ID。
+7. 建立统一日志、指标和告警视图。
+8. 执行故障演练：
+   - Nacos 暂停；
+   - 单服务全部实例下线；
+   - Feign 超时；
+   - Sentinel 熔断；
+   - Redis 数据丢失；
+   - RocketMQ 重复消息和积压；
+   - Outbox 发布进程停止；
+   - 数据库事务回滚。
+9. 记录每种故障的现象、恢复路径和数据一致性结果。
 
 #### 验收标准
 
-- 可以按服务独立构建、启动、停止和扩容。
-- 单个下游服务异常不会无限占用调用线程。
-- 重复消息和重复请求不会产生重复业务副作用。
-- 可以通过 Trace ID 串联 Gateway 和各业务服务日志。
-- 每个服务只能使用自己的数据库账号和 Redis Key 空间。
+- 能解释并演示普通本地事务为什么不能跨 HTTP 生效。
+- 能比较 Seata 和 Saga 的适用条件及代价。
+- 可以用 Trace ID 串联 Gateway、Feign、业务服务和消息消费日志。
+- 单个组件故障不会造成无法解释的数据状态。
+- 独立 Schema 实验完成后，服务不再依赖跨库外键。
 
-## 7. 跨服务事务设计
-
-### 7.1 保持本地强一致的事务
-
-| 服务 | 本地事务范围 |
-| --- | --- |
-| `account-service` | 用户注册；默认地址切换；地址修改与逻辑删除 |
-| `product-service` | 商品和分类修改；单次库存预占/释放；库存数量与库存日志 |
-| `order-service` | 订单主表、明细、地址快照、操作日志、状态变更及 Outbox 事件 |
-
-### 7.2 改为最终一致的流程
-
-| 流程 | 当前实现 | 拆分后实现 |
-| --- | --- | --- |
-| 创建订单与扣库存 | 同一 MySQL 事务 | Saga + 库存幂等 + 失败补偿 |
-| 取消订单与恢复库存 | 同一 MySQL 事务 | 中间状态/Outbox + 幂等释放 |
-| 支付与增加销量 | 同一 MySQL 事务直接修改商品 | 订单本地事务 + `OrderPaid` 事件 |
-| 下单后清购物车 | 提交后回调 | Outbox 事件 + 幂等清理 |
-| 注册和移除超时订单 | 提交后回调操作 Redis | Outbox/补偿任务，MySQL 继续作为最终依据 |
-
-### 7.3 不可削弱的并发保证
-
-- 库存扣减 SQL 必须包含“库存不少于购买数量”的条件。
-- 订单状态更新必须包含原状态条件。
-- Redis 锁只用于降低竞争，不作为唯一正确性条件。
-- 预占和释放库存必须记录业务处理结果，调用方超时后可以查询结果。
-- 消费消息时必须先判断业务事件是否已经处理。
-
-## 8. 同步接口和异步事件建议
+## 8. 服务调用和事件契约
 
 ### 8.1 同步接口
 
-| 提供方 | 接口能力 | 调用方 |
+| 提供方 | 能力 | 调用方 |
 | --- | --- | --- |
-| `account-service` | 查询当前用户拥有的地址快照 | `order-service` |
-| `product-service` | 批量查询商品展示信息 | `cart-service` |
-| `product-service` | 批量报价并校验可售状态 | `order-service` |
-| `product-service` | 按订单号预占、释放和查询库存处理结果 | `order-service` |
-| `cart-service` | 查询选中商品、按商品列表幂等清理 | `order-service` |
+| `account-service` | 查询用户摘要、查询用户拥有的地址快照 | `order-service`、拆分期间的原单体 |
+| `product-service` | 批量商品展示、批量报价 | `cart-service`、`order-service` |
+| `product-service` | 按订单号扣减、恢复、查询库存处理结果 | `order-service` |
+| `cart-service` | 查询选中商品、幂等清理指定商品 | `order-service` |
+
+同步接口约束：
+
+- 不暴露 Entity、Mapper 和数据库字段全集。
+- 写接口必须有幂等键。
+- 明确连接和读取超时。
+- 只有幂等写操作才允许有限自动重试。
+- 业务失败、限流、熔断、超时和服务不存在必须返回可区分结果。
 
 ### 8.2 异步事件
 
 | 事件 | 发布方 | 消费方 | 用途 |
 | --- | --- | --- | --- |
-| `OrderCreated` | `order-service` | 可选审计或后续扩展服务 | 记录订单创建事实 |
+| `OrderCreated` | `order-service` | 审计或后续扩展服务 | 记录订单创建事实 |
 | `OrderPaid` | `order-service` | `product-service` | 幂等增加销量 |
-| `OrderCancelled` | `order-service` | 可选审计或后续扩展服务 | 记录订单取消事实 |
-| `CartClearRequested` | `order-service` | `cart-service` | 下单成功后幂等清理已购商品 |
-| `OrderTimeoutScheduled` | `order-service` | 订单服务内部任务消费者 | 可靠注册订单超时任务 |
+| `OrderCancelled` | `order-service` | 审计或后续扩展服务 | 记录订单取消事实 |
+| `CartClearRequested` | `order-service` | `cart-service` | 幂等清理已购买商品 |
+| `OrderTimeoutScheduled` | `order-service` | 订单超时消费者 | 可靠注册超时任务 |
 
-库存预占第一轮采用同步调用，以便下单接口及时返回库存不足；其可靠性由幂等、结果查询和补偿任务保证。
+事件必须包含：
 
-## 9. 数据迁移策略
+- 唯一事件 ID；
+- 事件类型和版本；
+- 业务主键；
+- 发生时间；
+- Trace ID；
+- 幂等消费所需字段。
 
-每个服务采用相同的渐进迁移过程：
+## 9. 事务边界
 
-1. 为目标服务准备独立库或独立 Schema。
-2. 全量复制现有数据并校验行数、主键和关键金额。
-3. 在短暂停写窗口内同步最后的增量数据。
-4. 启动新服务进行只读影子校验，对比新旧接口结果。
-5. 通过 Gateway 将少量路径切换到新服务。
-6. 观察日志、错误率和数据一致性后逐步扩大流量。
-7. 确认稳定后，撤销原单体对该数据源的写权限。
-8. 保留一段观察期后再删除单体中的旧实现。
+### 9.1 保持本地强一致
 
-学习环境可以使用短暂停机迁移，不必在第一轮引入复杂的数据库 CDC。
+| 服务 | 本地事务范围 |
+| --- | --- |
+| `account-service` | 用户注册、地址修改、默认地址切换 |
+| `product-service` | 商品与分类修改、单次库存扣减/恢复、库存日志和库存幂等记录 |
+| `order-service` | 订单主表、明细、地址快照、操作日志、状态更新和 Outbox |
 
-## 10. 回退策略
+### 9.2 改为最终一致
 
-- 每次只切换一个服务的一组路由。
-- Gateway 保留指向原单体的回退配置。
-- 数据迁移期间避免新旧系统双写同一业务表；必须双写时应明确唯一主写方。
-- 若新服务发生只读故障，可直接将查询路由切回单体。
-- 若已经发生新服务写入，回退前必须先确认数据同步方向，不能直接让新旧服务同时写入。
-- 订单和库存切换前必须准备对账脚本，至少能够按 `orderNo` 核对订单状态、库存业务记录和库存日志。
+| 流程 | 单体实现 | 微服务实现 |
+| --- | --- | --- |
+| 创建订单和扣库存 | 一个 MySQL 事务 | Saga + 库存幂等 + 失败补偿 |
+| 取消订单和恢复库存 | 一个 MySQL 事务 | 中间状态/Outbox + 幂等恢复 |
+| 支付和增加销量 | 订单事务直接修改商品 | `OrderPaid` 事件 + 幂等消费 |
+| 下单后清购物车 | 提交后 Redis 回调 | Outbox + `CartClearRequested` |
+| 注册订单超时 | 提交后写 Redis | Outbox/消息 + MySQL 补偿扫描 |
 
-## 11. 建议工程结构
+即使第一轮共享同一个数据库，只要不同服务通过 HTTP 或消息协作，普通 `@Transactional` 就不能跨进程覆盖整个流程。
 
-拆分实施时可以建立独立的 Maven 聚合工程，但各服务必须保持可独立构建：
+## 10. 分支和提交策略
+
+长期分支：
 
 ```text
-spring-cloud-services/
-  pom.xml
-  gateway-service/
-  account-service/
-  cart-service/
-  product-service/
-  order-service/
-  service-contracts/
+main           # 保留模块化单体
+microservices  # 微服务长期集成主线
 ```
 
-`service-contracts` 只能保存稳定的接口契约、事件结构和必要的通用错误编码，禁止放入 Entity、Mapper、业务 Service 或可以访问数据库的公共代码。服务内部 DTO 不应无条件放入共享模块。
+阶段分支：
+
+```text
+feature/ms-p0-environment
+feature/ms-p1-gateway
+feature/ms-p2-account
+feature/ms-p3-service-governance
+feature/ms-p4-cart
+feature/ms-p5-product
+feature/ms-p6-order
+feature/ms-p7-distributed-lab
+```
+
+规则：
+
+- 阶段分支从最新 `microservices` 创建。
+- 每个阶段独立验收后合并回 `microservices`。
+- 不把 `microservices` 整体合并回 `main`。
+- 单体安全修复按需使用 `cherry-pick` 同步到另一条线。
+- 每阶段完成后打标签，例如 `ms-p1-gateway-complete`。
+
+## 11. 回退策略
+
+- 每次只切换一组 Gateway 路由。
+- Gateway 保留回原单体固定地址的备用配置。
+- 新服务切换前，原单体旧接口先通过配置关闭，不立即删除代码。
+- 共享数据库阶段禁止新旧应用同时写同一业务表。
+- 查询路由可快速切回原单体；写路由回退前必须确认唯一写入者。
+- RocketMQ、Outbox 和 Saga 上线前准备按 `orderNo` 的订单、库存和事件对账能力。
 
 ## 12. 总体验收标准
 
-完成全部拆分后应满足：
+完成全部阶段后应满足：
 
-- 前端只访问 Gateway，现有公开 API 路径尽量保持兼容。
-- 4 个业务服务可以独立启动、停止和部署。
-- 每张表和每个 Redis Key 只有一个明确的写入服务。
-- 不存在跨服务 Mapper、Entity 和物理外键依赖。
-- 用户购物和管理员管理全流程通过。
-- 订单、库存、支付、取消和发货仍满足原有并发与幂等保证。
-- 跨服务失败能够通过重试、幂等、Outbox 或补偿任务恢复。
-- 停止账户或商品服务时，历史订单仍可依靠快照正常查询。
-- Gateway 能够逐服务切换和回退路由。
+- 前端只访问 Gateway。
+- 所有服务注册到 Nacos，并从 Nacos 获取约定的配置。
+- Gateway 可以按服务名发现实例并负载均衡。
+- OpenFeign 调用具有超时、日志、负载均衡和 Sentinel 保护。
+- 共享数据库中每张表只有一个逻辑写入服务。
+- Redis Key 有明确所有者。
+- 不存在跨服务 Mapper 和 Entity 依赖。
+- 用户端和管理端全流程通过。
+- 订单、库存、支付、取消和发货保持并发与幂等保证。
+- RocketMQ 重复、延迟和暂时不可用不会产生重复副作用或永久丢失业务事件。
+- 可以演示并解释 Saga、Outbox、Seata 的差异。
+- 可以通过 Trace ID 串联 Gateway、Feign、服务和消息链路。
+- 能够完成服务下线、超时、熔断、消息积压和缓存丢失等故障演练。
 
-## 13. 推荐执行结论
+## 13. 当前下一步
 
-最终推荐顺序为：
+当前应从 P0 开始，但 P0 只负责环境与版本基线，不要求先完成整个单体的模块边界重构。
+
+第一批具体任务：
 
 ```text
-P0 单体边界准备
-  -> P1 gateway-service
-  -> P2 account-service
-  -> P3 cart-service
-  -> P4 product-service
-  -> P5 order-service
-  -> P6 微服务治理收尾
+1. 创建 feature/ms-p0-environment
+2. 确认稳定版本组合
+3. 创建 spring-cloud-backend Maven 聚合工程及其 spring-cloud-services 子聚合工程
+4. 使用只包含 Nacos 的 Docker Compose 启动 Nacos
+5. 定义 Namespace、Group、Data ID、服务名和端口
+6. 验证单体在统一 JDK、Spring Boot 和 Maven 版本基线上仍能构建和运行；Nacos 客户端接入留到 P1
+7. 完成 P0 验收后进入 Gateway 开发
 ```
-
-该顺序先建立统一入口和身份基础，再迁移数据天然独立的购物车，随后处理商品与库存，最后处理事务最复杂的订单。它兼顾了实施难度、依赖关系、业务风险和每个阶段的可验证性。

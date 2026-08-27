@@ -1,0 +1,27 @@
+name: hard-nacos
+
+services:
+  nacos:
+    image: nacos/nacos-server:v3.1.1
+    container_name: hard-nacos
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "false"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-c3ByaW5nLXByb2plY3QtbmFjb3MtbG9jYWwtZGV2LXRva2VuLXNlY3JldC0yMDI2}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-hard-nacos-local-key}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-hard-nacos-local-value}
+      JVM_XMS: ${NACOS_JVM_XMS:-256m}
+      JVM_XMX: ${NACOS_JVM_XMX:-512m}
+      JVM_XMN: ${NACOS_JVM_XMN:-128m}
+    ports:
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:8849:8080"
+      - "127.0.0.1:9848:9848"
+    volumes:
+      - nacos-data:/home/nacos/data
+      - nacos-logs:/home/nacos/logs
+
+volumes:
+  nacos-data:
+  nacos-logs:
