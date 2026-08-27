@@ -5,7 +5,7 @@ spring:
   datasource:
     url: jdbc:mysql://127.0.0.1:3306/spring
     username: root
-    password: hard-local-password
+    password: 040bff1401e51a24e8f82d273288abca
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
