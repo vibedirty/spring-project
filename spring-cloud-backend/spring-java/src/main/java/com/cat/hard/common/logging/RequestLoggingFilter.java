@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -24,6 +25,13 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
 	public static final String REQUEST_ID_HEADER = "X-Request-ID";
 	public static final String REQUEST_ID_MDC_KEY = "requestId";
+	public static final String SERVICE_INSTANCE_HEADER = "X-Service-Instance";
+
+	@Value("${spring.application.name:spring-java-service}")
+	private String serviceName = "spring-java-service";
+
+	@Value("${server.port:8080}")
+	private int serverPort = 8080;
 
 	private static final int MAX_REQUEST_ID_LENGTH = 64;
 	private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9._-]+");
@@ -39,6 +47,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
 		MDC.put(REQUEST_ID_MDC_KEY, requestId);
 		response.setHeader(REQUEST_ID_HEADER, requestId);
+		response.setHeader(SERVICE_INSTANCE_HEADER, serviceName + ":" + serverPort);
 		log.info("HTTP request started: method={}, uri={}", request.getMethod(), request.getRequestURI());
 
 		try {

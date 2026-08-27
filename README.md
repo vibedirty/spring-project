@@ -10,6 +10,7 @@ spring-project/
 │   ├── pom.xml                # 统一父 POM 和聚合入口
 │   ├── spring-java/           # 模块化单体
 │   └── spring-cloud-services/ # 微服务聚合工程
+│       └── gateway-service/   # P1 统一 API 入口
 └── infra/                     # Nacos 等本地基础设施
 ```
 

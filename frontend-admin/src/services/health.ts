@@ -61,8 +61,11 @@ export const healthCheckDefinitions: HealthCheckDefinition[] = [
   },
 ]
 
+export const ACTUATOR_BASE_URL = import.meta.env.VITE_ACTUATOR_BASE_URL
+  ?? 'http://localhost:9000/management/spring-java/actuator'
+
 const healthHttp = axios.create({
-  baseURL: import.meta.env.VITE_ACTUATOR_BASE_URL ?? '/actuator',
+  baseURL: ACTUATOR_BASE_URL,
   timeout: 5_000,
   validateStatus: () => true,
 })

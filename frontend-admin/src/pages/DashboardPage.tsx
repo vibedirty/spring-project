@@ -24,6 +24,7 @@ import {
 import type { ReactNode } from 'react'
 import type { AdminSession } from '../services/auth'
 import {
+  ACTUATOR_BASE_URL,
   getHealthChecks,
   getInitialHealthChecks,
   type HealthCheckKey,
@@ -266,7 +267,7 @@ function DashboardPage({ session }: { session: AdminSession }) {
         <Text type="secondary">监测端点</Text>
         <Space wrap size={[6, 6]}>
           {checks.map((check) => (
-            <Tag key={check.key}>/actuator{check.path}</Tag>
+            <Tag key={check.key}>{ACTUATOR_BASE_URL}{check.path}</Tag>
           ))}
         </Space>
       </div>

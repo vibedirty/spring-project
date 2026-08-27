@@ -35,6 +35,9 @@ class RequestLoggingFilterTests {
 				.andExpect(header().string(
 						RequestLoggingFilter.REQUEST_ID_HEADER,
 						"frontend-request-019"))
+				.andExpect(header().string(
+						RequestLoggingFilter.SERVICE_INSTANCE_HEADER,
+						"spring-java-service:8080"))
 				.andExpect(content().string("frontend-request-019"));
 
 		assertThat(MDC.get(RequestLoggingFilter.REQUEST_ID_MDC_KEY)).isNull();

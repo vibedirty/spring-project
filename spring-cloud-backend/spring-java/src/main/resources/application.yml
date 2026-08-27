@@ -1,8 +1,32 @@
+server:
+  port: ${SERVER_PORT:8080}
+
 spring:
   application:
-    name: hard
+    name: spring-java-service
   profiles:
-    active: dev
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  config:
+    import:
+      - optional:nacos:spring-java-service.yaml?group=SERVICE_GROUP&refreshEnabled=true
+  cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:hard-dev}
+        group: SERVICE_GROUP
+        health-indicator:
+          enabled: true
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:hard-dev}
+        group: HARD_GROUP
+        cluster-name: LOCAL
+        ip: ${SERVICE_IP:127.0.0.1}
+        watch:
+          enabled: true
+        health-indicator:
+          enabled: true
 
 mybatis-plus:
   global-config:
@@ -21,7 +45,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,info,nacosdiscovery
   endpoint:
     health:
       show-components: always

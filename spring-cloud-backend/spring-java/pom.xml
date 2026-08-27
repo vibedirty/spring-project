@@ -52,6 +52,15 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- P1: 将模块化单体注册为 spring-java-service，并从 Nacos 导入服务配置 -->
+		<dependency>
+			<groupId>com.alibaba.cloud</groupId>
+			<artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.alibaba.cloud</groupId>
+			<artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+		</dependency>
 
 		<!-- 005: MySQL、MyBatis-Plus 和 Redis -->
 		<!-- 提供适配 Spring Boot 4 的 MyBatis-Plus 数据访问能力 -->

@@ -191,16 +191,16 @@ gateway-service
 
 难度采用 1～5 级，数值越大表示越困难。排序同时考虑学习依赖、业务耦合和阶段可验证性，不按当前业务体量删减学习内容。
 
-| 顺序 | 阶段 | 任务 | 优先级 | 难度 | 主要学习内容 |
-| --- | --- | --- | --- | --- | --- |
-| 0 | P0 | 环境、版本和 Nacos 基线 | 最高 | 2 | BOM、版本兼容、Nacos 部署、服务命名和配置模型 |
-| 1 | P1 | Gateway + Nacos | 最高 | 2 | Gateway、注册发现、`lb://`、动态路由、多实例负载均衡 |
-| 2 | P2 | Account Service | 高 | 3 | 业务服务抽取、共享数据库边界、JWT 跨服务使用、路由切换 |
-| 3 | P3 | 服务通信与治理 | 高 | 3 | OpenFeign、LoadBalancer、Sentinel、超时、熔断和降级 |
-| 4 | P4 | Cart Service | 中高 | 3 | Redis 数据所有权、商品批量查询、远程依赖降级 |
-| 5 | P5 | Product Service | 高 | 4 | 分类、商品、库存、缓存、幂等库存接口 |
-| 6 | P6 | Order Service | 最高 | 5 | RocketMQ、Outbox、Saga、幂等消费、补偿任务 |
-| 7 | P7 | 高级实验和可观测性 | 中高 | 4 | Seata、链路追踪、故障演练、独立 Schema 对比实验 |
+| 顺序 | 阶段 | 任务 | 状态 | 优先级 | 难度 | 主要学习内容 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | P0 | 环境、版本和 Nacos 基线 | 已完成 | 最高 | 2 | BOM、版本兼容、Nacos 部署、服务命名和配置模型 |
+| 1 | P1 | Gateway + Nacos | 已完成 | 最高 | 2 | Gateway、注册发现、`lb://`、动态路由、多实例负载均衡 |
+| 2 | P2 | Account Service | 待开始 | 高 | 3 | 业务服务抽取、共享数据库边界、JWT 跨服务使用、路由切换 |
+| 3 | P3 | 服务通信与治理 | 待开始 | 高 | 3 | OpenFeign、LoadBalancer、Sentinel、超时、熔断和降级 |
+| 4 | P4 | Cart Service | 待开始 | 中高 | 3 | Redis 数据所有权、商品批量查询、远程依赖降级 |
+| 5 | P5 | Product Service | 待开始 | 高 | 4 | 分类、商品、库存、缓存、幂等库存接口 |
+| 6 | P6 | Order Service | 待开始 | 最高 | 5 | RocketMQ、Outbox、Saga、幂等消费、补偿任务 |
+| 7 | P7 | 高级实验和可观测性 | 待开始 | 中高 | 4 | Seata、链路追踪、故障演练、独立 Schema 对比实验 |
 
 推荐顺序：
 
@@ -312,6 +312,20 @@ spring-cloud-backend/
 - 单体多实例能够被轮询或按实际负载均衡策略访问。
 - 一个实例下线不会导致全部请求失败。
 - Gateway 路由可以回退为原单体固定地址。
+
+#### 完成记录（2026-08-27）
+
+P1 已在 `feature/ms-p1-gateway` 实现并完成技术链路验收，可合并回 `microservices`：
+
+- 新增 `gateway-service`，通过 Nacos Config 加载路由、超时和 CORS；
+- Gateway 和原单体分别以 `gateway-service`、`spring-java-service` 注册到 Nacos；
+- `/api/**` 默认通过 `lb://spring-java-service` 转发；
+- 已用宿主机端口 `8081`、`8082` 验证双实例分发和单实例下线恢复；
+- 已验证 Nacos 配置推送能够在 Gateway 运行期间触发刷新；
+- 用户端和管理端浏览器直接跨域访问 `http://localhost:9000`，不使用 Vite 本地代理；
+- 通过 `GATEWAY_UPSTREAM_URI=http://127.0.0.1:8080` 可将路由回退为固定单体地址。
+
+启动、回退和复验命令见 `spring-cloud-backend/spring-cloud-services/gateway-service/README.md`。
 
 ### P2：Account Service，共享数据库
 
@@ -672,16 +686,16 @@ feature/ms-p7-distributed-lab
 
 ## 13. 当前下一步
 
-当前应从 P0 开始，但 P0 只负责环境与版本基线，不要求先完成整个单体的模块边界重构。
+P0 环境基线和 P1 Gateway + Nacos 已完成。当前应从最新 `microservices` 创建 `feature/ms-p2-account`，开始抽取 Account Service。
 
-第一批具体任务：
+P2 第一批具体任务：
 
 ```text
-1. 创建 feature/ms-p0-environment
-2. 确认稳定版本组合
-3. 创建 spring-cloud-backend Maven 聚合工程及其 spring-cloud-services 子聚合工程
-4. 使用只包含 Nacos 的 Docker Compose 启动 Nacos
-5. 定义 Namespace、Group、Data ID、服务名和端口
-6. 验证单体在统一 JDK、Spring Boot 和 Maven 版本基线上仍能构建和运行；Nacos 客户端接入留到 P1
-7. 完成 P0 验收后进入 Gateway 开发
+1. 从 microservices 创建 feature/ms-p2-account
+2. 创建 account-service Maven 模块和 account-service.yaml
+3. 明确 auth、user、address 的数据所有权和共享数据库边界
+4. 迁移账户领域代码，禁止跨服务共享 Mapper、Entity 和业务 Service
+5. 验证 JWT 能在 Gateway、account-service 和保留单体之间传递
+6. 将账户相关 Gateway 路由从 spring-java-service 切换到 account-service
+7. 完成新旧路由回退、登录注册和地址管理回归
 ```
