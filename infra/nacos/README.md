@@ -1,4 +1,4 @@
-# P0 Nacos 本地环境
+# P0/P1 Nacos 本地环境
 
 P0 只将 Nacos 运行在 Docker 中。Gateway、原单体和后续业务服务均直接运行在 macOS 宿主机 JVM，不构建 Docker 镜像。
 
@@ -34,7 +34,7 @@ curl --fail \
   'http://127.0.0.1:8848/nacos/v3/client/ns/instance/list?serviceName=p0-health-check'
 ```
 
-## 初始化 P0 命名空间
+## 初始化命名空间和配置
 
 首次启动后准备本地管理员密码并执行初始化：
 
@@ -44,7 +44,13 @@ cp infra/nacos/.env.example infra/nacos/.env
 sh infra/nacos/bootstrap.sh
 ```
 
-脚本会初始化或登录本地 `nacos` 管理员，创建 `hard-dev`、`hard-test`，并在两个 Namespace 的 `COMMON_GROUP` 中发布 `common.yaml` P0 标记配置。真实 `.env` 已被仓库根 `.gitignore` 忽略。
+脚本会初始化或登录本地 `nacos` 管理员，创建 `hard-dev`、`hard-test`，并向两个 Namespace 发布：
+
+- `COMMON_GROUP/common.yaml`：P0 基线标记；
+- `SERVICE_GROUP/gateway-service.yaml`：P1 Gateway 路由、超时和 CORS；
+- `SERVICE_GROUP/spring-java-service.yaml`：P1 原单体服务配置。
+
+配置源文件保存在 `infra/nacos/config/`，应先修改版本库中的源文件，再重新执行脚本发布，避免 Nacos 控制台内容与代码库长期漂移。真实 `.env` 已被仓库根 `.gitignore` 忽略。
 
 ## 停止、重启和重置
 
@@ -94,7 +100,19 @@ SERVICE_GROUP
   order-service.yaml
 ```
 
-P0 只定义并验证该模型。应用从 Nacos 导入配置、服务注册和多实例负载均衡从 P1 开始实现。
+P0 定义并验证该模型；P1 已实现应用从 Nacos 导入配置、服务注册、动态 Gateway 路由和多实例负载均衡。
+
+## P1 服务注册检查
+
+启动应用后，可以用 Nacos 3 Client API 检查 `LOCAL` Cluster。查询实例列表时必须带 `clusterName=LOCAL`：
+
+```bash
+curl --fail \
+  'http://127.0.0.1:8848/nacos/v3/client/ns/instance/list?serviceName=gateway-service&groupName=HARD_GROUP&namespaceId=hard-dev&clusterName=LOCAL'
+
+curl --fail \
+  'http://127.0.0.1:8848/nacos/v3/client/ns/instance/list?serviceName=spring-java-service&groupName=HARD_GROUP&namespaceId=hard-dev&clusterName=LOCAL'
+```
 
 ## 宿主机应用约定
 

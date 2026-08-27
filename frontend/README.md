@@ -19,12 +19,11 @@ npm install
 npm run dev
 ```
 
-开发服务器默认运行在 `http://localhost:5173`。后端默认运行在 `http://localhost:8080`，Vite 会把 `/api` 请求代理到后端。
+开发服务器固定运行在 `http://localhost:5173`。浏览器直接跨域访问 `http://localhost:9000` 的 Gateway，再由 Gateway 通过 Nacos 将请求转发到单体实例；Vite 不代理 API 请求，端口被占用时会直接报错。
 
 如需修改地址，复制 `.env.example` 为 `.env.local` 并调整：
 
-- `VITE_API_BASE_URL`：浏览器使用的 API 基础路径，默认 `/api`
-- `VITE_API_PROXY_TARGET`：Vite 开发代理目标，仅在开发环境生效
+- `VITE_API_BASE_URL`：浏览器访问的 Gateway API 地址，默认 `http://localhost:9000/api`
 
 ## 校验
 

@@ -15,5 +15,7 @@
 	<packaging>pom</packaging>
 	<name>spring-cloud-services</name>
 
-	<!-- Service modules are added here in P1-P6 when their implementation begins. -->
+	<modules>
+		<module>gateway-service</module>
+	</modules>
 </project>

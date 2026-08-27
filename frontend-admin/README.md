@@ -36,8 +36,10 @@ npm run dev
 
 复制 `.env.example` 为 `.env.local` 后可按需配置：
 
-- `VITE_API_BASE_URL`：前端请求基础路径，默认 `/api`
-- `VITE_API_PROXY_TARGET`：本地开发代理的后端地址，例如 `http://localhost:8080`
+- `VITE_API_BASE_URL`：浏览器直接访问的 Gateway API 地址，默认 `http://localhost:9000/api`
+- `VITE_ACTUATOR_BASE_URL`：Gateway 暴露的单体健康检查入口，默认 `http://localhost:9000/management/spring-java/actuator`
+
+开发服务器固定运行在 `http://localhost:5174`。Vite 不代理 API 或 Actuator 请求，端口被占用时会直接报错。
 
 ## 校验
 

@@ -67,9 +67,31 @@ publish_baseline_config() {
     printf '\n'
 }
 
+publish_service_config() {
+    namespace_id=$1
+    data_id=$2
+    config_desc=$3
+    config_file="$SCRIPT_DIR/config/$data_id"
+
+    curl --fail --silent --show-error --request POST \
+        "$NACOS_BASE_URL/nacos/v3/admin/cs/config" \
+        --header "accessToken:$ACCESS_TOKEN" \
+        --data-urlencode "namespaceId=$namespace_id" \
+        --data-urlencode "groupName=SERVICE_GROUP" \
+        --data-urlencode "dataId=$data_id" \
+        --data-urlencode "type=yaml" \
+        --data-urlencode "desc=$config_desc" \
+        --data-urlencode "content@$config_file"
+    printf '\n'
+}
+
 create_namespace hard-dev hard-dev "Local development namespace"
 create_namespace hard-test hard-test "Local test namespace"
 publish_baseline_config hard-dev
 publish_baseline_config hard-test
+publish_service_config hard-dev gateway-service.yaml "P1 Gateway routes, CORS, and timeouts"
+publish_service_config hard-dev spring-java-service.yaml "P1 modular monolith service configuration"
+publish_service_config hard-test gateway-service.yaml "P1 Gateway routes, CORS, and timeouts"
+publish_service_config hard-test spring-java-service.yaml "P1 modular monolith service configuration"
 
-echo "Nacos P0 namespaces and baseline configurations are ready."
+echo "Nacos P0/P1 namespaces and configurations are ready."
