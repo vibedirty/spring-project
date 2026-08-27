@@ -1,6 +1,6 @@
 # Hard Frontend
 
-`frontend` 是与 `spring-java` 独立启动的 React 用户端工程；独立管理端位于同级 `frontend-admin` 项目。当前已接入用户注册、登录、启用分类导航和在售商品分页列表，不包含 mock 数据。
+`frontend` 是与 `spring-cloud-backend/spring-java` 独立启动的 React 用户端工程；独立管理端位于同级 `frontend-admin` 项目。当前已接入用户注册、登录、启用分类导航和在售商品分页列表，不包含 mock 数据。
 
 ## 技术栈
 
