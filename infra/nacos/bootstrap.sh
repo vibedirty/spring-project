@@ -89,9 +89,11 @@ create_namespace hard-dev hard-dev "Local development namespace"
 create_namespace hard-test hard-test "Local test namespace"
 publish_baseline_config hard-dev
 publish_baseline_config hard-test
-publish_service_config hard-dev gateway-service.yaml "P1 Gateway routes, CORS, and timeouts"
+publish_service_config hard-dev gateway-service.yaml "P1/P2 Gateway routes, CORS, and timeouts"
 publish_service_config hard-dev spring-java-service.yaml "P1 modular monolith service configuration"
-publish_service_config hard-test gateway-service.yaml "P1 Gateway routes, CORS, and timeouts"
+publish_service_config hard-dev account-service.yaml "P2 account service configuration"
+publish_service_config hard-test gateway-service.yaml "P1/P2 Gateway routes, CORS, and timeouts"
 publish_service_config hard-test spring-java-service.yaml "P1 modular monolith service configuration"
+publish_service_config hard-test account-service.yaml "P2 account service configuration"
 
-echo "Nacos P0/P1 namespaces and configurations are ready."
+echo "Nacos P0/P1/P2 namespaces and configurations are ready."

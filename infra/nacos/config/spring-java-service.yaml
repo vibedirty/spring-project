@@ -7,3 +7,7 @@ info:
   p1:
     config-source: nacos
     service-role: modular-monolith
+
+app:
+  legacy-controllers:
+    account-enabled: false
