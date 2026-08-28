@@ -107,19 +107,23 @@ create_namespace hard-dev hard-dev "Local development namespace"
 create_namespace hard-test hard-test "Local test namespace"
 publish_baseline_config hard-dev
 publish_baseline_config hard-test
-publish_service_config hard-dev gateway-service.yaml "P1/P2 Gateway routes, CORS, and timeouts"
+publish_service_config hard-dev gateway-service.yaml "P1/P2/P4 Gateway routes, CORS, and timeouts"
 publish_service_config hard-dev spring-java-service.yaml "P1 modular monolith service configuration"
 publish_service_config hard-dev account-service.yaml "P2 account service configuration"
-publish_service_config hard-test gateway-service.yaml "P1/P2 Gateway routes, CORS, and timeouts"
+publish_service_config hard-dev cart-service.yaml "P4 cart service configuration"
+publish_service_config hard-test gateway-service.yaml "P1/P2/P4 Gateway routes, CORS, and timeouts"
 publish_service_config hard-test spring-java-service.yaml "P1 modular monolith service configuration"
 publish_service_config hard-test account-service.yaml "P2 account service configuration"
+publish_service_config hard-test cart-service.yaml "P4 cart service configuration"
 
 for namespace_id in hard-dev hard-test; do
     publish_sentinel_config "$namespace_id" spring-java-service-sentinel-flow.json "P3 monolith Feign flow and concurrency rules"
     publish_sentinel_config "$namespace_id" spring-java-service-sentinel-degrade.json "P3 monolith Feign circuit-breaker rules"
     publish_sentinel_config "$namespace_id" account-service-sentinel-flow.json "P3 account internal API flow and concurrency rules"
     publish_sentinel_config "$namespace_id" account-service-sentinel-degrade.json "P3 account internal API circuit-breaker rules"
-    publish_sentinel_config "$namespace_id" gateway-service-sentinel-gateway-flow.json "P3 Gateway route flow rules"
+    publish_sentinel_config "$namespace_id" cart-service-sentinel-flow.json "P4 cart internal API flow rules"
+    publish_sentinel_config "$namespace_id" cart-service-sentinel-degrade.json "P4 cart internal API circuit-breaker rules"
+    publish_sentinel_config "$namespace_id" gateway-service-sentinel-gateway-flow.json "P3/P4 Gateway route flow rules"
 done
 
-echo "Nacos P0/P1/P2/P3 namespaces, service configurations, and Sentinel rules are ready."
+echo "Nacos P0/P1/P2/P3/P4 namespaces, service configurations, and Sentinel rules are ready."

@@ -47,6 +47,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cat.hard.integration.cart.service.CartQueryService;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -56,7 +57,7 @@ public class OrderService {
 	private static final long PAYMENT_TIMEOUT_MINUTES = 5L;
 
 	@Resource
-	private CartService cartService;
+	private CartQueryService cartQueryService;
 
 	@Resource
 	private OrderAmountCalculator orderAmountCalculator;
@@ -314,7 +315,7 @@ public class OrderService {
 			String orderNo,
 			List<Long> productIds) {
 		try {
-			cartService.deleteItems(productIds);
+			cartQueryService.clearPurchasedItems(currentUser.getUserId(), productIds);
 		}
 		catch (RuntimeException exception) {
 			log.warn("订单{}创建成功，但购物车清理失败", orderNo, exception);
@@ -322,14 +323,7 @@ public class OrderService {
 	}
 
 	public List<CartItemResponse> getSelectedCartItems() {
-		List<CartItemResponse> cartItems = cartService.listItems();
-		List<CartItemResponse> selectedItems = new ArrayList<>();
-		for (CartItemResponse cartItem : cartItems) {
-			if (Boolean.TRUE.equals(cartItem.getSelected())) {
-				selectedItems.add(cartItem);
-			}
-		}
-
+		List<CartItemResponse> selectedItems = cartQueryService.getSelectedCartItems(currentUser.getUserId());
 		if (selectedItems.isEmpty()) {
 			throw new BusinessException(
 					ErrorCode.BUSINESS_CONFLICT,

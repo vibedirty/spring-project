@@ -19,6 +19,10 @@ spring:
             connect-timeout: 2000
             read-timeout: 3000
             logger-level: basic
+          cart-service:
+            connect-timeout: 2000
+            read-timeout: 3000
+            logger-level: basic
     sentinel:
       eager: true
       log:

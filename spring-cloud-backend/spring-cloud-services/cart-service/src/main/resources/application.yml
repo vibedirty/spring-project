@@ -1,0 +1,86 @@
+server:
+  port: ${SERVER_PORT:8102}
+
+spring:
+  application:
+    name: cart-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  config:
+    import:
+      - optional:nacos:cart-service.yaml?group=SERVICE_GROUP&refreshEnabled=true
+  cloud:
+    openfeign:
+      sentinel:
+        enabled: true
+      client:
+        config:
+          spring-java-service:
+            connect-timeout: 2000
+            read-timeout: 3000
+            logger-level: basic
+    sentinel:
+      eager: true
+      log:
+        dir: ${SENTINEL_LOG_DIR:/tmp/hard-sentinel/cart-service}
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD_ADDR:127.0.0.1:8858}
+      datasource:
+        flow-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: cart-service-sentinel-flow.json
+            data-type: json
+            rule-type: flow
+        degrade-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: cart-service-sentinel-degrade.json
+            data-type: json
+            rule-type: degrade
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:hard-dev}
+        group: SERVICE_GROUP
+        health-indicator:
+          enabled: true
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:hard-dev}
+        group: HARD_GROUP
+        cluster-name: LOCAL
+        ip: ${SERVICE_IP:127.0.0.1}
+        watch:
+          enabled: true
+        health-indicator:
+          enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: 3000ms
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:d29uZy1qaWUtaGFyZC1zZWNyZXQta2V5LTMyeHh4eHg=}
+    expiration: ${JWT_EXPIRATION:PT168H}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [requestId=%X{requestId:-}] %logger{36} - %msg%n"

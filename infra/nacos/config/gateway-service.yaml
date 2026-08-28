@@ -48,6 +48,34 @@ spring:
                       - java.net.ConnectException
               metadata:
                 connect-timeout: 2000
+            - id: cart-api
+              uri: "${CART_UPSTREAM_URI:lb://cart-service}"
+              predicates:
+                - Path=/api/cart,/api/cart/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: cart-health
+              uri: "${CART_UPSTREAM_URI:lb://cart-service}"
+              predicates:
+                - Path=/management/cart-service/actuator/health,/management/cart-service/actuator/health/**
+              filters:
+                - StripPrefix=2
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
                 response-timeout: 5000
             - id: spring-java-api
               uri: "${GATEWAY_UPSTREAM_URI:lb://spring-java-service}"

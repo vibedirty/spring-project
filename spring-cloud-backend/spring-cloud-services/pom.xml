@@ -17,6 +17,7 @@
 
 	<modules>
 		<module>account-service</module>
+		<module>cart-service</module>
 		<module>gateway-service</module>
 	</modules>
 </project>

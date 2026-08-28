@@ -1,0 +1,19 @@
+[
+  {
+    "resource": "cart-query-batch-product-summary",
+    "grade": 0,
+    "count": 1000,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000,
+    "slowRatioThreshold": 0.6
+  },
+  {
+    "resource": "cart-query-batch-product-summary",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000
+  }
+]

@@ -10,7 +10,10 @@ info:
   p3:
     account-query: openfeign-load-balanced
     governance: sentinel-nacos
+  p4:
+    cart-query: openfeign-load-balanced
 
 app:
   legacy-controllers:
     account-enabled: false
+    cart-enabled: false

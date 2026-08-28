@@ -512,7 +512,7 @@ GET /internal/users/{userId}/addresses/{addressId}
 
 - 历史订单仍依靠订单快照展示，不依赖账户服务在线。
 
-### P4：Cart Service
+### P4：Cart Service（已完成）
 
 #### 目标
 

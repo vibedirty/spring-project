@@ -1,0 +1,9 @@
+management:
+  info:
+    env:
+      enabled: true
+
+info:
+  p4:
+    config-source: nacos
+    service-role: cart-service

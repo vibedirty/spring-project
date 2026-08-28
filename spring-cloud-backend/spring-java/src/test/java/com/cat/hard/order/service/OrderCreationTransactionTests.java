@@ -3,6 +3,7 @@ package com.cat.hard.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,7 +15,7 @@ import com.cat.hard.address.entity.UserAddress;
 import com.cat.hard.address.mapper.UserAddressMapper;
 import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.cart.dto.CartItemResponse;
-import com.cat.hard.cart.service.CartService;
+import com.cat.hard.integration.cart.service.CartQueryService;
 import com.cat.hard.category.entity.Category;
 import com.cat.hard.category.mapper.CategoryMapper;
 import com.cat.hard.common.error.ErrorCode;
@@ -64,7 +65,7 @@ class OrderCreationTransactionTests {
 	private OrderTimeoutRedisService orderTimeoutRedisService;
 
 	@MockitoBean
-	private CartService cartService;
+	private CartQueryService cartQueryService;
 
 	@MockitoBean
 	private CurrentUser currentUser;
@@ -131,7 +132,7 @@ class OrderCreationTransactionTests {
 						user.getNickname(),
 						"USER",
 						"ENABLED"));
-		when(cartService.listItems()).thenReturn(List.of(
+		when(cartQueryService.getSelectedCartItems(userId)).thenReturn(List.of(
 				cartItem(firstProduct, 2, 5),
 				cartItem(secondProduct, 2, 2)));
 	}
@@ -212,7 +213,7 @@ class OrderCreationTransactionTests {
 				secondProductId)).isZero();
 		assertThat(productMapper.selectById(firstProductId).getStock()).isEqualTo(5);
 		assertThat(productMapper.selectById(secondProductId).getStock()).isEqualTo(1);
-		verify(cartService, never()).deleteItems(anyList());
+		verify(cartQueryService, never()).clearPurchasedItems(any(), anyList());
 	}
 
 	@Test
@@ -222,7 +223,7 @@ class OrderCreationTransactionTests {
 				secondProductId);
 		Product firstProduct = productMapper.selectById(firstProductId);
 		Product secondProduct = productMapper.selectById(secondProductId);
-		when(cartService.listItems()).thenReturn(List.of(
+		when(cartQueryService.getSelectedCartItems(userId)).thenReturn(List.of(
 				cartItem(firstProduct, 2, 5),
 				cartItem(secondProduct, 2, 5)));
 		OrderCreateRequest request = new OrderCreateRequest();
@@ -236,7 +237,7 @@ class OrderCreationTransactionTests {
 				.isEqualTo(1L);
 		assertThat(orderTimeoutRedisService.findExpiredOrderNos(order.getExpireAt()))
 				.contains(order.getOrderNo());
-		verify(cartService).deleteItems(List.of(firstProductId, secondProductId));
+		verify(cartQueryService).clearPurchasedItems(userId, List.of(firstProductId, secondProductId));
 	}
 
 	private Product createProduct(String name, int stock) {

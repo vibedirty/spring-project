@@ -16,7 +16,7 @@ import java.util.List;
 
 import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.cart.dto.CartItemResponse;
-import com.cat.hard.cart.service.CartService;
+import com.cat.hard.integration.cart.service.CartQueryService;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
@@ -58,7 +58,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class OrderServiceTests {
 
 	@Mock
-	private CartService cartService;
+	private CartQueryService cartQueryService;
 
 	@Spy
 	private OrderAmountCalculator orderAmountCalculator =
@@ -110,8 +110,7 @@ class OrderServiceTests {
 	@Test
 	void shouldReturnSelectedItemsOnly() {
 		CartItemResponse selected = item(20001L, true, true, null);
-		CartItemResponse unselected = item(20002L, false, true, null);
-		when(cartService.listItems()).thenReturn(List.of(selected, unselected));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(selected));
 
 		List<CartItemResponse> result = orderService.getSelectedCartItems();
 
@@ -125,7 +124,7 @@ class OrderServiceTests {
 				true,
 				false,
 				"商品已下架");
-		when(cartService.listItems()).thenReturn(List.of(invalidSelected));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(invalidSelected));
 
 		List<CartItemResponse> result = orderService.getSelectedCartItems();
 
@@ -135,16 +134,14 @@ class OrderServiceTests {
 
 	@Test
 	void shouldRejectEmptyCart() {
-		when(cartService.listItems()).thenReturn(List.of());
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of());
 
 		assertNoSelectedItemError();
 	}
 
 	@Test
 	void shouldRejectCartWithOnlyUnselectedItems() {
-		when(cartService.listItems()).thenReturn(List.of(
-				item(20001L, false, true, null),
-				item(20002L, false, false, "商品已下架")));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of());
 
 		assertNoSelectedItemError();
 	}
@@ -153,7 +150,7 @@ class OrderServiceTests {
 	void shouldAcceptSelectedItemsThatAreCurrentlyPurchasable() {
 		CartItemResponse first = item(20001L, true, true, null);
 		CartItemResponse second = item(20002L, true, true, null);
-		when(cartService.listItems()).thenReturn(List.of(first, second));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(first, second));
 
 		assertThat(orderService.getValidatedSelectedCartItems())
 				.containsExactly(first, second);
@@ -172,7 +169,7 @@ class OrderServiceTests {
 				true,
 				false,
 				"商品不存在或已删除");
-		when(cartService.listItems()).thenReturn(List.of(deleted));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(deleted));
 
 		assertInvalidItemError("商品（ID：20001）：商品不存在或已删除");
 	}
@@ -186,7 +183,7 @@ class OrderServiceTests {
 				ProductStatus.OFF_SALE,
 				false,
 				"商品已下架");
-		when(cartService.listItems()).thenReturn(List.of(offSale));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(offSale));
 
 		assertInvalidItemError("商品“Product 20001”（ID：20001）：商品已下架");
 	}
@@ -200,7 +197,7 @@ class OrderServiceTests {
 				ProductStatus.ON_SALE,
 				true,
 				null);
-		when(cartService.listItems()).thenReturn(List.of(invalidQuantity));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(invalidQuantity));
 
 		assertInvalidItemError(
 				"商品“Product 20001”（ID：20001）：购买数量必须在1到99之间");
@@ -215,7 +212,7 @@ class OrderServiceTests {
 				ProductStatus.ON_SALE,
 				false,
 				"商品库存不足");
-		when(cartService.listItems()).thenReturn(List.of(insufficientStock));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(insufficientStock));
 
 		assertInvalidItemError("商品“Product 20001”（ID：20001）：商品库存不足");
 	}
@@ -226,7 +223,7 @@ class OrderServiceTests {
 				20001L, 2, 10, ProductStatus.ON_SALE, true, null);
 		CartItemResponse second = item(
 				20002L, 3, 10, ProductStatus.ON_SALE, true, null);
-		when(cartService.listItems()).thenReturn(List.of(first, second));
+		when(cartQueryService.getSelectedCartItems(any())).thenReturn(List.of(first, second));
 
 		OrderAmountResult result = orderService.calculateSelectedCartAmount();
 
@@ -375,7 +372,7 @@ class OrderServiceTests {
 				20001L, 2, 10, ProductStatus.ON_SALE, true, null);
 		CartItemResponse second = item(
 				20002L, 3, 10, ProductStatus.ON_SALE, true, null);
-		when(cartService.listItems()).thenReturn(List.of(first, second));
+		when(cartQueryService.getSelectedCartItems(7L)).thenReturn(List.of(first, second));
 		when(currentUser.getUserId()).thenReturn(7L);
 		when(orderNumberGenerator.generate()).thenReturn("ORD202608240002");
 		when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
@@ -406,7 +403,7 @@ class OrderServiceTests {
 			verify(orderTimeoutRedisService, never()).add(
 					any(String.class),
 					any(LocalDateTime.class));
-			verify(cartService, never()).deleteItems(anyList());
+			verify(cartQueryService, never()).clearPurchasedItems(any(), anyList());
 			verify(orderBusinessLogService, never()).logCreated(
 					any(String.class),
 					any(Long.class));
@@ -418,17 +415,17 @@ class OrderServiceTests {
 			verify(orderTimeoutRedisService).add(
 					"ORD202608240002",
 					order.getExpireAt());
-			verify(cartService).deleteItems(List.of(20001L, 20002L));
+			verify(cartQueryService).clearPurchasedItems(7L, List.of(20001L, 20002L));
 			verify(orderBusinessLogService).logCreated(
 					"ORD202608240002",
 					7L);
 			InOrder preparationOrder = org.mockito.Mockito.inOrder(
 					orderIdempotencyService,
-					cartService,
+					cartQueryService,
 					accountQueryService,
 					transactionTemplate);
 			preparationOrder.verify(orderIdempotencyService).acquire(7L, null);
-			preparationOrder.verify(cartService).listItems();
+			preparationOrder.verify(cartQueryService).getSelectedCartItems(7L);
 			preparationOrder.verify(accountQueryService)
 					.getAddressSnapshot(7L, 30001L);
 			preparationOrder.verify(accountQueryService).getUserSummary(7L);
@@ -444,7 +441,7 @@ class OrderServiceTests {
 		runTransactionImmediately();
 		CartItemResponse cartItem = item(
 				20001L, 2, 10, ProductStatus.ON_SALE, true, null);
-		when(cartService.listItems()).thenReturn(List.of(cartItem));
+		when(cartQueryService.getSelectedCartItems(7L)).thenReturn(List.of(cartItem));
 		when(currentUser.getUserId()).thenReturn(7L);
 		OrderIdempotencyLock lock = new OrderIdempotencyLock(
 				"order:idempotency:7:retry-token",
@@ -476,7 +473,7 @@ class OrderServiceTests {
 			verify(orderTimeoutRedisService, never()).add(
 					any(String.class),
 					any(LocalDateTime.class));
-			verify(cartService, never()).deleteItems(anyList());
+			verify(cartQueryService, never()).clearPurchasedItems(any(), anyList());
 		}
 		finally {
 			TransactionSynchronizationManager.clearSynchronization();
@@ -491,7 +488,7 @@ class OrderServiceTests {
 				"request-owner");
 		when(orderIdempotencyService.acquire(7L, "invalid-cart-token"))
 				.thenReturn(lock);
-		when(cartService.listItems()).thenReturn(List.of());
+		when(cartQueryService.getSelectedCartItems(7L)).thenReturn(List.of());
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setAddressId(30001L);
 		request.setIdempotencyToken("invalid-cart-token");

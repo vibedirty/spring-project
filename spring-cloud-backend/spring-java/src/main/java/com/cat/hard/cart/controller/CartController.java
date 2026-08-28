@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 
 import jakarta.annotation.Resource;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/cart")
+@ConditionalOnProperty(
+		prefix = "app.legacy-controllers",
+		name = "cart-enabled",
+		havingValue = "true",
+		matchIfMissing = true)
 public class CartController {
 
 	@Resource
