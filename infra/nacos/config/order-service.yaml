@@ -1,0 +1,15 @@
+management:
+  info:
+    env:
+      enabled: true
+
+info:
+  p6:
+    config-source: nacos
+    service-role: order-service
+
+app:
+  order:
+    simulation:
+      delay-ms: 0
+      force-error: false

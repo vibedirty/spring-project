@@ -1,0 +1,20 @@
+[
+  {
+    "resource": "product-stock-deduct",
+    "grade": 0,
+    "count": 1000,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000,
+    "slowRatioThreshold": 0.5
+  },
+  {
+    "resource": "product-stock-restore",
+    "grade": 0,
+    "count": 1000,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000,
+    "slowRatioThreshold": 0.5
+  }
+]

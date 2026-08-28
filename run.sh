@@ -5,12 +5,11 @@ set -u
 ms_project_dir="$(cd "$(dirname "$0")" && pwd)"
 ms_backend_dir="$ms_project_dir/spring-cloud-backend"
 
-# 新增微服务时，只需追加一行：服务名|端口|相对于项目根目录的 JAR 路径
 ms_services=(
   "account-service|8101|spring-cloud-backend/spring-cloud-services/account-service/target/account-service-0.0.1-SNAPSHOT.jar"
-  "spring-java-service|8081|spring-cloud-backend/spring-java/target/hard-0.0.1-SNAPSHOT.jar"
   "cart-service|8102|spring-cloud-backend/spring-cloud-services/cart-service/target/cart-service-0.0.1-SNAPSHOT.jar"
   "product-service|8103|spring-cloud-backend/spring-cloud-services/product-service/target/product-service-0.0.1-SNAPSHOT.jar"
+  "order-service|8104|spring-cloud-backend/spring-cloud-services/order-service/target/order-service-0.0.1-SNAPSHOT.jar"
   "gateway-service|9000|spring-cloud-backend/spring-cloud-services/gateway-service/target/gateway-service-0.0.1-SNAPSHOT.jar"
 )
 

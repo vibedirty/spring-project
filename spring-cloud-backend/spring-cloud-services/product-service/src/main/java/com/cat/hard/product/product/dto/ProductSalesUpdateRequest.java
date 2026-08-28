@@ -15,6 +15,14 @@ public class ProductSalesUpdateRequest {
 	@NotEmpty(message = "商品销量明细不能为空")
 	private List<SalesItem> items;
 
+	public ProductSalesUpdateRequest() {
+	}
+
+	public ProductSalesUpdateRequest(String orderNo, List<SalesItem> items) {
+		this.orderNo = orderNo;
+		this.items = items;
+	}
+
 	public String getOrderNo() {
 		return orderNo;
 	}

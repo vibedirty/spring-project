@@ -78,6 +78,9 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [requestId=%X{requestId:--}] %logger{36} - %msg%n"
 
 app:
+  jwt:
+    secret: ${JWT_SECRET:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+    expiration: ${JWT_EXPIRATION:7d}
   product:
     simulation:
       delay-ms: 0

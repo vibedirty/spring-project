@@ -120,6 +120,49 @@ spring:
               metadata:
                 connect-timeout: 2000
                 response-timeout: 5000
+            - id: order-api
+              uri: "${ORDER_UPSTREAM_URI:lb://order-service}"
+              predicates:
+                - Path=/api/orders,/api/orders/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: order-admin-api
+              uri: "${ORDER_UPSTREAM_URI:lb://order-service}"
+              predicates:
+                - Path=/api/admin/orders,/api/admin/orders/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: order-health
+              uri: "${ORDER_UPSTREAM_URI:lb://order-service}"
+              predicates:
+                - Path=/management/order-service/actuator/health,/management/order-service/actuator/health/**
+              filters:
+                - StripPrefix=2
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 5000
             - id: spring-java-api
               uri: "${GATEWAY_UPSTREAM_URI:lb://spring-java-service}"
               predicates:

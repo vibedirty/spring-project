@@ -1,0 +1,26 @@
+[
+  {
+    "resource": "order:create",
+    "grade": 1,
+    "count": 50,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "order:pay",
+    "grade": 1,
+    "count": 50,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "order:cancel",
+    "grade": 1,
+    "count": 50,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  }
+]

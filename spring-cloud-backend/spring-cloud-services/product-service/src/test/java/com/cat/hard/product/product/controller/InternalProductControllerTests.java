@@ -30,7 +30,7 @@ class InternalProductControllerTests {
 
 	@Test
 	void getBatchSummary_success() {
-		ProductSummary summary = new ProductSummary(1L, "商品A", null, new BigDecimal("10.00"), "ON_SALE", 100);
+		ProductSummary summary = new ProductSummary(1L, "商品A", null, new BigDecimal("10.00"), 100, "ON_SALE");
 		when(productService.getBatchSummaries(List.of(1L))).thenReturn(List.of(summary));
 
 		ApiResponse<List<ProductSummary>> response = internalProductController.getBatchSummary(List.of(1L));
@@ -42,7 +42,7 @@ class InternalProductControllerTests {
 
 	@Test
 	void getBatchQuotes_success() {
-		ProductQuoteDto quote = new ProductQuoteDto(1L, "商品A", new BigDecimal("10.00"), "ON_SALE", 100, true);
+		ProductQuoteDto quote = new ProductQuoteDto(1L, "商品A", null, new BigDecimal("10.00"), 100, "ON_SALE", true);
 		when(productService.getBatchQuotes(List.of(1L))).thenReturn(List.of(quote));
 
 		ApiResponse<List<ProductQuoteDto>> response = internalProductController.getBatchQuotes(List.of(1L));

@@ -584,9 +584,9 @@ GET /internal/users/{userId}/addresses/{addressId}
 
 - 原单体停止写商品相关表和商品缓存。
 
-### P6：Order Service、RabbitMQ、Outbox 和 Saga
+### P6：Order Service、RabbitMQ、Outbox 和 Saga（已完成）
 
-#### 目标
+> 完成状态（2026-08-28）：已实现。`order-service` 微服务拆分完成，包括 Saga 订单创建与状态机流转（`PENDING_STOCK` -> `PENDING_PAYMENT` -> `PENDING_SHIPMENT` / `CANCELLED`）、RabbitMQ 拓扑配置（TTL + DLX 延时关单队列）、Outbox 本地可靠事件表与后台定时重试投递任务、`cart-service` 异步清空购物车消费者、`product-service` 异步累加销量消费者、`event_consumption_log` 消费端幂等去重、Gateway 路由切换至 `order-service`，已通过微服务全量编译构建与单元测试验证。
 
 迁移订单全流程，通过订单和库存协作系统学习消息队列、可靠事件、最终一致性、幂等消费和 Saga 补偿。
 
