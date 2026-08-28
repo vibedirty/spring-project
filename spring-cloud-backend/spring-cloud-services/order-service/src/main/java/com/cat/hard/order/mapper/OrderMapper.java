@@ -28,6 +28,13 @@ public interface OrderMapper extends BaseMapper<Order> {
 		return selectOne(queryWrapper);
 	}
 
+	default Order selectByUserIdAndIdempotencyToken(Long userId, String idempotencyToken) {
+		LambdaQueryWrapper<Order> queryWrapper = new LambdaQueryWrapper<Order>(Order.class);
+		queryWrapper.eq(Order::getUserId, userId)
+				.eq(Order::getIdempotencyToken, idempotencyToken);
+		return selectOne(queryWrapper);
+	}
+
 	default Page<Order> selectExpiredPendingPaymentPage(
 			Page<Order> page,
 			LocalDateTime deadline) {
@@ -46,6 +53,16 @@ public interface OrderMapper extends BaseMapper<Order> {
 				new LambdaQueryWrapper<Order>(Order.class);
 		queryWrapper.eq(Order::getStatus, OrderStatus.PENDING_STOCK)
 				.le(Order::getCreatedAt, deadline)
+				.orderByAsc(Order::getId);
+		return selectPage(page, queryWrapper);
+	}
+
+	default Page<Order> selectHangingCancellingPage(
+			Page<Order> page,
+			LocalDateTime deadline) {
+		LambdaQueryWrapper<Order> queryWrapper = new LambdaQueryWrapper<Order>(Order.class);
+		queryWrapper.eq(Order::getStatus, OrderStatus.CANCELLING)
+				.le(Order::getUpdatedAt, deadline)
 				.orderByAsc(Order::getId);
 		return selectPage(page, queryWrapper);
 	}

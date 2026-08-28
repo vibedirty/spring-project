@@ -3,26 +3,21 @@ package com.cat.hard.order.service;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.enums.OrderStatus;
+import com.cat.hard.order.integration.product.dto.StockDeductionItem;
 import com.cat.hard.order.integration.product.dto.StockOperationResultResponse;
 import com.cat.hard.order.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.order.mapper.OrderItemMapper;
 import com.cat.hard.order.mapper.OrderMapper;
-import com.cat.hard.order.messaging.event.CartClearRequestedEvent;
-import com.cat.hard.order.messaging.event.OrderCreatedEvent;
-import com.cat.hard.order.messaging.event.OrderTimeoutScheduledEvent;
-import com.cat.hard.order.outbox.service.OutboxEventService;
-
-import jakarta.annotation.Resource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
 public class SagaCompensationTask {
@@ -30,105 +25,114 @@ public class SagaCompensationTask {
 	private static final Logger log = LoggerFactory.getLogger(SagaCompensationTask.class);
 	private static final int BATCH_SIZE = 50;
 
-	@Resource
-	private OrderMapper orderMapper;
+	private final OrderMapper orderMapper;
+	private final OrderItemMapper orderItemMapper;
+	private final ProductStockIntegrationService productStockIntegrationService;
+	private final OrderLockService orderLockService;
+	private final OrderService orderService;
+	private final OrderSagaTransactionService orderSagaTransactionService;
+	private final OrderCancellationTransactionService cancellationTransactionService;
+	private final TransactionTemplate transactionTemplate;
 
-	@Resource
-	private OrderItemMapper orderItemMapper;
-
-	@Resource
-	private ProductStockIntegrationService productStockIntegrationService;
-
-	@Resource
-	private OutboxEventService outboxEventService;
-
-	@Resource
-	private OrderLockService orderLockService;
-
-	@Resource
-	private OrderService orderService;
+	public SagaCompensationTask(
+			OrderMapper orderMapper,
+			OrderItemMapper orderItemMapper,
+			ProductStockIntegrationService productStockIntegrationService,
+			OrderLockService orderLockService,
+			OrderService orderService,
+			OrderSagaTransactionService orderSagaTransactionService,
+			OrderCancellationTransactionService cancellationTransactionService,
+			TransactionTemplate transactionTemplate) {
+		this.orderMapper = orderMapper;
+		this.orderItemMapper = orderItemMapper;
+		this.productStockIntegrationService = productStockIntegrationService;
+		this.orderLockService = orderLockService;
+		this.orderService = orderService;
+		this.orderSagaTransactionService = orderSagaTransactionService;
+		this.cancellationTransactionService = cancellationTransactionService;
+		this.transactionTemplate = transactionTemplate;
+	}
 
 	@Scheduled(fixedDelay = 30000)
 	public void scanAndCompensateHangingOrders() {
-		// 扫描创建超过 30 秒仍处于 PENDING_STOCK 的悬挂订单
 		LocalDateTime threshold = LocalDateTime.now().minusSeconds(30);
 		Page<Order> page = new Page<>(1, BATCH_SIZE);
 		Page<Order> hangingPage = orderMapper.selectHangingPendingStockPage(page, threshold);
-
-		if (hangingPage.getRecords().isEmpty()) {
-			return;
-		}
-
-		log.info("Scanned {} hanging PENDING_STOCK orders for Saga compensation", hangingPage.getRecords().size());
 		for (Order order : hangingPage.getRecords()) {
-			orderLockService.executeWithStatusLock(order.getOrderNo(), () -> {
-				compensateSingleOrder(order);
-				return null;
-			});
+			try {
+				orderLockService.executeWithStatusLock(order.getOrderNo(), () -> {
+					compensatePendingStock(order);
+					return null;
+				});
+			}
+			catch (RuntimeException exception) {
+				log.error("Saga pending-stock compensation failed for order {}", order.getOrderNo(), exception);
+			}
+		}
+
+		Page<Order> cancellingPage = orderMapper.selectHangingCancellingPage(
+				new Page<>(1, BATCH_SIZE),
+				threshold);
+		for (Order order : cancellingPage.getRecords()) {
+			try {
+				orderLockService.executeWithStatusLock(order.getOrderNo(), () ->
+						cancellationTransactionService.resumeCancellation(order.getOrderNo()));
+			}
+			catch (RuntimeException exception) {
+				log.error("Saga cancellation compensation failed for order {}", order.getOrderNo(), exception);
+			}
 		}
 	}
 
-	private void compensateSingleOrder(Order order) {
-		Order latestOrder = orderMapper.selectById(order.getId());
-		if (latestOrder == null || latestOrder.getStatus() != OrderStatus.PENDING_STOCK) {
+	private void compensatePendingStock(Order order) {
+		Order latest = orderMapper.selectById(order.getId());
+		if (latest == null || latest.getStatus() != OrderStatus.PENDING_STOCK) {
 			return;
 		}
 
-		try {
-			StockOperationResultResponse result = productStockIntegrationService.queryStockResult(order.getOrderNo());
-			if (result != null && "SUCCESS".equalsIgnoreCase(result.status())) {
-				log.info("Saga compensation: Stock deduct succeeded for order {}, promoting to PENDING_PAYMENT", order.getOrderNo());
-				promoteToPendingPayment(order);
-			}
-			else if (result != null && "FAILED".equalsIgnoreCase(result.status())) {
-				log.info("Saga compensation: Stock deduct failed for order {}, cancelling order", order.getOrderNo());
-				orderService.markOrderCancelled(order.getOrderNo(), "Saga 补偿核对：库存扣减失败");
-			}
-			else {
-				log.warn("Saga compensation: Stock operation not found or still processing for order {}, cancelling order", order.getOrderNo());
-				orderService.markOrderCancelled(order.getOrderNo(), "Saga 补偿核对超时：未检索到库存扣减记录");
-			}
+		StockOperationResultResponse result = productStockIntegrationService.queryStockResult(order.getOrderNo());
+		if (isOperation(result, "DEDUCT", "SUCCESS")) {
+			orderSagaTransactionService.promoteToPendingPayment(order.getOrderNo());
+			return;
 		}
-		catch (Exception e) {
-			log.error("Saga compensation failed for order {}: {}", order.getOrderNo(), e.getMessage());
+		if (isOperation(result, "DEDUCT", "FAILED")
+				|| isOperation(result, "RESTORE", "SUCCESS")) {
+			transactionTemplate.executeWithoutResult(status ->
+					orderService.markOrderCancelled(order.getOrderNo(), "Saga 核对确认库存未被占用"));
+			return;
+		}
+		if (result != null && "PROCESSING".equalsIgnoreCase(result.status())) {
+			retryStockDeduct(order);
+			return;
+		}
+		if (result == null || "NOT_FOUND".equalsIgnoreCase(result.status())) {
+			retryStockDeduct(order);
 		}
 	}
 
-	private void promoteToPendingPayment(Order order) {
-		LambdaUpdateWrapper<Order> updateWrapper = new LambdaUpdateWrapper<>();
-		updateWrapper.eq(Order::getId, order.getId())
-				.eq(Order::getStatus, OrderStatus.PENDING_STOCK)
-				.set(Order::getStatus, OrderStatus.PENDING_PAYMENT)
-				.set(Order::getUpdatedAt, LocalDateTime.now());
-		orderMapper.update(null, updateWrapper);
-
-		// 补发 Outbox 事件
-		OrderCreatedEvent createdEvent = new OrderCreatedEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				order.getTotalAmount(),
-				order.getCreatedAt() != null ? order.getCreatedAt() : LocalDateTime.now(),
-				null);
-		outboxEventService.saveEvent("OrderCreated", "ORDER", order.getOrderNo(), createdEvent);
-
+	private void retryStockDeduct(Order order) {
 		List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId());
-		List<Long> productIds = items.stream().map(OrderItem::getProductId).toList();
-		CartClearRequestedEvent clearEvent = new CartClearRequestedEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				productIds,
-				LocalDateTime.now(),
-				null);
-		outboxEventService.saveEvent("CartClearRequested", "ORDER", order.getOrderNo(), clearEvent);
+		if (items.isEmpty()) {
+			transactionTemplate.executeWithoutResult(status ->
+					orderService.markOrderCancelled(order.getOrderNo(), "Saga 补偿失败：订单明细不存在"));
+			return;
+		}
+		List<StockDeductionItem> deductionItems = items.stream()
+				.map(item -> new StockDeductionItem(
+						item.getProductId(),
+						item.getProductName(),
+						item.getQuantity()))
+				.toList();
+		productStockIntegrationService.decreaseForOrder(order.getOrderNo(), deductionItems);
+		orderSagaTransactionService.promoteToPendingPayment(order.getOrderNo());
+	}
 
-		OrderTimeoutScheduledEvent timeoutEvent = new OrderTimeoutScheduledEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				order.getExpireAt(),
-				null);
-		outboxEventService.saveEvent("OrderTimeoutScheduled", "ORDER", order.getOrderNo(), timeoutEvent);
+	private boolean isOperation(
+			StockOperationResultResponse result,
+			String operationType,
+			String status) {
+		return result != null
+				&& operationType.equalsIgnoreCase(result.operationType())
+				&& status.equalsIgnoreCase(result.status());
 	}
 }

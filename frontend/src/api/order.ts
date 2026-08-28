@@ -2,7 +2,9 @@ import { request } from './http'
 import type { PageResponse } from './types'
 
 export type OrderStatus =
+  | 'PENDING_STOCK'
   | 'PENDING_PAYMENT'
+  | 'CANCELLING'
   | 'PENDING_SHIPMENT'
   | 'SHIPPED'
   | 'COMPLETED'
@@ -72,7 +74,7 @@ export interface OrderListQuery {
 
 export interface OrderCreatePayload {
   addressId: number
-  idempotencyToken?: string
+  idempotencyToken: string
 }
 
 export interface OrderCreateResponse {

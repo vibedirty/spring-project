@@ -54,9 +54,10 @@ public class ProductSalesUpdateConsumer {
 			boolean processed = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
 				try {
 					EventConsumptionLog logRecord = new EventConsumptionLog();
-					logRecord.setEventId(event.eventId());
-					logRecord.setConsumerName(CONSUMER_NAME);
-					logRecord.setStatus("SUCCESS");
+						logRecord.setEventId(event.eventId());
+						logRecord.setConsumerName(CONSUMER_NAME);
+						logRecord.setEventType("OrderPaid");
+						logRecord.setStatus("SUCCESS");
 					logRecord.setCreatedAt(LocalDateTime.now());
 					eventConsumptionLogMapper.insert(logRecord);
 				}

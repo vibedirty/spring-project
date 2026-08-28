@@ -85,18 +85,17 @@ public class OrderPaymentTransactionService {
 			for (OrderItem item : orderItems) {
 				paidItems.add(new OrderPaidEvent.PaidItem(item.getProductId(), item.getQuantity()));
 			}
-			OrderPaidEvent paidEvent = new OrderPaidEvent(
-					null,
-					orderNo,
-					userId,
-					paymentTime,
-					paidItems,
-					null);
 			outboxEventService.saveEvent(
 					"OrderPaid",
 					"ORDER",
 					orderNo,
-					paidEvent);
+					(eventId, traceId) -> new OrderPaidEvent(
+							eventId,
+							orderNo,
+							userId,
+							paymentTime,
+							paidItems,
+							traceId));
 
 			registerPaymentLogAfterCommit(orderNo, userId);
 			return true;

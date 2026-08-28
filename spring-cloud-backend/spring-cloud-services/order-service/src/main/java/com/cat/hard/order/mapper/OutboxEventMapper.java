@@ -24,7 +24,10 @@ public interface OutboxEventMapper extends BaseMapper<OutboxEvent> {
 	default List<OutboxEvent> selectPendingEvents(int limit, LocalDateTime now) {
 		LambdaQueryWrapper<OutboxEvent> queryWrapper =
 				new LambdaQueryWrapper<OutboxEvent>(OutboxEvent.class);
-		queryWrapper.eq(OutboxEvent::getStatus, OutboxStatus.PENDING)
+		queryWrapper.in(
+					OutboxEvent::getStatus,
+					OutboxStatus.PENDING,
+					OutboxStatus.FAILED)
 				.and(w -> w.isNull(OutboxEvent::getNextRetryAt)
 						.or()
 						.le(OutboxEvent::getNextRetryAt, now))

@@ -92,7 +92,9 @@ const orderStatusMeta: Record<
   OrderStatus,
   { label: string; color: string }
 > = {
+  PENDING_STOCK: { label: '库存处理中', color: 'warning' },
   PENDING_PAYMENT: { label: '待付款', color: 'warning' },
+  CANCELLING: { label: '取消处理中', color: 'default' },
   PENDING_SHIPMENT: { label: '待发货', color: 'processing' },
   SHIPPED: { label: '已发货', color: 'blue' },
   COMPLETED: { label: '已完成', color: 'success' },
@@ -467,7 +469,9 @@ function OrderManagePage() {
                 allowClear
                 style={{ width: 130 }}
                 options={[
+                  { value: 'PENDING_STOCK', label: '库存处理中' },
                   { value: 'PENDING_PAYMENT', label: '待付款' },
+                  { value: 'CANCELLING', label: '取消处理中' },
                   { value: 'PENDING_SHIPMENT', label: '待发货' },
                   { value: 'SHIPPED', label: '已发货' },
                   { value: 'COMPLETED', label: '已完成' },

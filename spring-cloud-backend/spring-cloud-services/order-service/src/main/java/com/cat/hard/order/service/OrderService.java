@@ -13,7 +13,7 @@ import com.cat.hard.order.auth.security.CurrentUser;
 import com.cat.hard.order.calculator.OrderAmountCalculator;
 import com.cat.hard.order.common.error.ErrorCode;
 import com.cat.hard.order.common.exception.BusinessException;
-import com.cat.hard.order.common.service.TransactionCallbackService;
+import com.cat.hard.order.common.util.TextUtils;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.dto.OrderDetailResponse;
 import com.cat.hard.order.dto.OrderListRequest;
@@ -33,24 +33,22 @@ import com.cat.hard.order.integration.cart.dto.CartItemResponse;
 import com.cat.hard.order.integration.cart.service.CartQueryService;
 import com.cat.hard.order.integration.product.dto.StockDeductionItem;
 import com.cat.hard.order.integration.product.dto.StockOperationResultResponse;
+import com.cat.hard.order.integration.product.dto.StockRestorationItem;
 import com.cat.hard.order.integration.product.enums.ProductStatus;
 import com.cat.hard.order.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.order.mapper.OrderAddressMapper;
 import com.cat.hard.order.mapper.OrderItemMapper;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
-import com.cat.hard.order.messaging.event.CartClearRequestedEvent;
-import com.cat.hard.order.messaging.event.OrderCreatedEvent;
-import com.cat.hard.order.messaging.event.OrderTimeoutScheduledEvent;
 import com.cat.hard.order.model.OrderAmountResult;
 import com.cat.hard.order.model.OrderIdempotencyLock;
 import com.cat.hard.order.model.OrderItemAmount;
-import com.cat.hard.order.outbox.service.OutboxEventService;
 
 import jakarta.annotation.Resource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -101,24 +99,30 @@ public class OrderService {
 	private OrderCancellationTransactionService orderCancellationTransactionService;
 
 	@Resource
-	private TransactionCallbackService transactionCallbackService;
-
-	@Resource
-	private OrderBusinessLogService orderBusinessLogService;
-
-	@Resource
-	private OutboxEventService outboxEventService;
+	private OrderSagaTransactionService orderSagaTransactionService;
 
 	@Resource
 	private TransactionTemplate transactionTemplate;
 
 	public Order createOrder(OrderCreateRequest request) {
 		Long userId = currentUser.getUserId();
+		String idempotencyToken = TextUtils.trimToNull(request.getIdempotencyToken());
+		if (idempotencyToken == null) {
+			throw new BusinessException(ErrorCode.PARAMETER_ERROR, "幂等token不能为空");
+		}
+		Order existingOrder = orderMapper.selectByUserIdAndIdempotencyToken(userId, idempotencyToken);
+		if (existingOrder != null) {
+			return existingOrder;
+		}
 		OrderIdempotencyLock idempotencyLock = orderIdempotencyService.acquire(
 				userId,
-				request.getIdempotencyToken());
+				idempotencyToken);
 
 		try {
+			existingOrder = orderMapper.selectByUserIdAndIdempotencyToken(userId, idempotencyToken);
+			if (existingOrder != null) {
+				return existingOrder;
+			}
 			List<CartItemResponse> selectedItems = getValidatedSelectedCartItems();
 			OrderAmountResult amountResult = orderAmountCalculator.calculate(selectedItems);
 			AddressSnapshot addressSnapshot = accountQueryService.getAddressSnapshot(
@@ -130,11 +134,22 @@ public class OrderService {
 			UserSummary userSummary = accountQueryService.getUserSummary(userId);
 
 			// Saga Phase 1: 本地事务插入初始订单 (PENDING_STOCK)
-			Order order = transactionTemplate.execute(status -> createPendingStockOrderInTransaction(
-					selectedItems,
-					amountResult,
-					addressSnapshot,
-					userSummary));
+			Order order;
+			try {
+				order = transactionTemplate.execute(status -> createPendingStockOrderInTransaction(
+						selectedItems,
+						amountResult,
+						addressSnapshot,
+						userSummary,
+						idempotencyToken));
+			}
+			catch (DuplicateKeyException exception) {
+				Order duplicate = orderMapper.selectByUserIdAndIdempotencyToken(userId, idempotencyToken);
+				if (duplicate != null) {
+					return duplicate;
+				}
+				throw exception;
+			}
 
 			if (order == null) {
 				throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "创建订单初始状态失败");
@@ -151,20 +166,7 @@ public class OrderService {
 
 			try {
 				productStockIntegrationService.decreaseForOrder(order.getOrderNo(), deductionItems);
-				// 扣减成功，本地事务流转为 PENDING_PAYMENT 并写入 Outbox 事件
-				return transactionTemplate.execute(status -> markOrderPendingPaymentAndSaveOutbox(
-						order,
-						selectedItems,
-						userSummary));
-			}
-			catch (BusinessException e) {
-				// 业务异常（如库存不足），本地事务流转为 CANCELLED
-				log.warn("订单{}扣减库存失败: {}", order.getOrderNo(), e.getMessage());
-				transactionTemplate.execute(status -> {
-					markOrderCancelled(order.getOrderNo(), "扣减库存失败：" + e.getMessage());
-					return null;
-				});
-				throw e;
+				return promoteAfterStockDeduct(order, deductionItems);
 			}
 			catch (Exception e) {
 				// 远程超时或网络异常，尝试查询库存扣减结果
@@ -178,18 +180,25 @@ public class OrderService {
 				}
 
 				final StockOperationResultResponse finalResult = result;
-				if (finalResult != null && "SUCCESS".equalsIgnoreCase(finalResult.status())) {
-					return transactionTemplate.execute(status -> markOrderPendingPaymentAndSaveOutbox(
-							order,
-							selectedItems,
-							userSummary));
+				if (isOperation(finalResult, "DEDUCT", "SUCCESS")) {
+					return promoteAfterStockDeduct(order, deductionItems);
 				}
-				else if (finalResult != null && "FAILED".equalsIgnoreCase(finalResult.status())) {
+				else if (isOperation(finalResult, "DEDUCT", "FAILED")) {
 					transactionTemplate.execute(status -> {
 						markOrderCancelled(order.getOrderNo(), "扣减库存失败：" + finalResult.detail());
 						return null;
 					});
+					if (e instanceof BusinessException businessException) {
+						throw businessException;
+					}
 					throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "库存扣减失败，订单已取消");
+				}
+				else if (isOperation(finalResult, "RESTORE", "SUCCESS")) {
+					transactionTemplate.execute(status -> {
+						markOrderCancelled(order.getOrderNo(), "库存已恢复，订单创建终止");
+						return null;
+					});
+					throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单创建已终止");
 				}
 				else {
 					// 无法确认状态，保持 PENDING_STOCK，由后台 Saga 补偿任务核对
@@ -198,9 +207,8 @@ public class OrderService {
 				}
 			}
 		}
-		catch (RuntimeException exception) {
-			releaseIdempotencyAfterFailure(idempotencyLock);
-			throw exception;
+		finally {
+			releaseIdempotencyLock(idempotencyLock);
 		}
 	}
 
@@ -208,11 +216,13 @@ public class OrderService {
 			List<CartItemResponse> selectedItems,
 			OrderAmountResult amountResult,
 			AddressSnapshot addressSnapshot,
-			UserSummary userSummary) {
+			UserSummary userSummary,
+			String idempotencyToken) {
 
 		Order order = new Order();
 		order.setOrderNo(orderNumberGenerator.generate());
 		order.setUserId(currentUser.getUserId());
+		order.setIdempotencyToken(idempotencyToken);
 		order.setTotalAmount(amountResult.getTotalAmount());
 		order.setStatus(OrderStatus.PENDING_STOCK);
 		order.setExpireAt(LocalDateTime.now().plusMinutes(PAYMENT_TIMEOUT_MINUTES));
@@ -224,60 +234,48 @@ public class OrderService {
 		return order;
 	}
 
-	private Order markOrderPendingPaymentAndSaveOutbox(
+	private Order promoteAfterStockDeduct(
 			Order order,
-			List<CartItemResponse> selectedItems,
-			UserSummary userSummary) {
+			List<StockDeductionItem> deductionItems) {
+		Order promoted = orderSagaTransactionService.promoteToPendingPayment(order.getOrderNo());
+		if (promoted != null && promoted.getStatus() == OrderStatus.PENDING_PAYMENT) {
+			return promoted;
+		}
 
-		LambdaUpdateWrapper<Order> updateWrapper = new LambdaUpdateWrapper<>();
-		updateWrapper.eq(Order::getId, order.getId())
-				.eq(Order::getStatus, OrderStatus.PENDING_STOCK)
-				.set(Order::getStatus, OrderStatus.PENDING_PAYMENT)
-				.set(Order::getUpdatedAt, LocalDateTime.now());
-		orderMapper.update(null, updateWrapper);
-		order.setStatus(OrderStatus.PENDING_PAYMENT);
+		List<StockRestorationItem> restorationItems = deductionItems.stream()
+				.map(item -> new StockRestorationItem(
+						item.getProductId(),
+						item.getProductName(),
+						item.getQuantity()))
+				.toList();
+		try {
+			productStockIntegrationService.restoreForOrder(order.getOrderNo(), restorationItems);
+		}
+		catch (RuntimeException exception) {
+			log.error("订单{}状态晋级失败后的库存恢复也失败，需要人工对账", order.getOrderNo(), exception);
+		}
+		throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单状态已变化，创建流程已终止");
+	}
 
-		// 1. OrderCreated Outbox 事件
-		OrderCreatedEvent createdEvent = new OrderCreatedEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				order.getTotalAmount(),
-				order.getCreatedAt() != null ? order.getCreatedAt() : LocalDateTime.now(),
-				null);
-		outboxEventService.saveEvent("OrderCreated", "ORDER", order.getOrderNo(), createdEvent);
-
-		// 2. CartClearRequested Outbox 事件
-		List<Long> productIds = selectedItems.stream().map(CartItemResponse::getProductId).toList();
-		CartClearRequestedEvent clearEvent = new CartClearRequestedEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				productIds,
-				LocalDateTime.now(),
-				null);
-		outboxEventService.saveEvent("CartClearRequested", "ORDER", order.getOrderNo(), clearEvent);
-
-		// 3. OrderTimeoutScheduled Outbox 事件（投递到 RabbitMQ TTL 延时队列）
-		OrderTimeoutScheduledEvent timeoutEvent = new OrderTimeoutScheduledEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				order.getExpireAt(),
-				null);
-		outboxEventService.saveEvent("OrderTimeoutScheduled", "ORDER", order.getOrderNo(), timeoutEvent);
-
-		registerOrderCreatedLogAfterCommit(order);
-		return order;
+	private boolean isOperation(
+			StockOperationResultResponse result,
+			String operationType,
+			String status) {
+		return result != null
+				&& operationType.equalsIgnoreCase(result.operationType())
+				&& status.equalsIgnoreCase(result.status());
 	}
 
 	public void markOrderCancelled(String orderNo, String reason) {
 		LambdaUpdateWrapper<Order> updateWrapper = new LambdaUpdateWrapper<>();
 		updateWrapper.eq(Order::getOrderNo, orderNo)
+				.eq(Order::getStatus, OrderStatus.PENDING_STOCK)
 				.set(Order::getStatus, OrderStatus.CANCELLED)
 				.set(Order::getCancelledAt, LocalDateTime.now())
 				.set(Order::getUpdatedAt, LocalDateTime.now());
-		orderMapper.update(null, updateWrapper);
+		if (orderMapper.update(null, updateWrapper) != 1) {
+			return;
+		}
 
 		Order order = orderMapper.selectByOrderNo(orderNo);
 		if (order != null) {
@@ -387,7 +385,7 @@ public class OrderService {
 		return responses;
 	}
 
-	private void releaseIdempotencyAfterFailure(
+	private void releaseIdempotencyLock(
 			OrderIdempotencyLock idempotencyLock) {
 		if (idempotencyLock == null) {
 			return;
@@ -398,17 +396,10 @@ public class OrderService {
 		}
 		catch (RuntimeException exception) {
 			log.warn(
-					"订单创建失败后释放幂等token失败，key={}",
+					"释放订单创建互斥锁失败，key={}",
 					idempotencyLock.getKey(),
 					exception);
 		}
-	}
-
-	private void registerOrderCreatedLogAfterCommit(Order order) {
-		String orderNo = order.getOrderNo();
-		Long userId = order.getUserId();
-		transactionCallbackService.executeAfterCommit(
-				() -> orderBusinessLogService.logCreated(orderNo, userId));
 	}
 
 	public List<CartItemResponse> getSelectedCartItems() {

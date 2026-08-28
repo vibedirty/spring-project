@@ -16,9 +16,15 @@ public class EventConsumptionLog {
 
 	private String consumerName;
 
+	private String eventType;
+
 	private String status;
 
+	private String detail;
+
 	private LocalDateTime createdAt;
+
+	private LocalDateTime updatedAt;
 
 	public Long getId() {
 		return id;
@@ -44,6 +50,14 @@ public class EventConsumptionLog {
 		this.consumerName = consumerName;
 	}
 
+	public String getEventType() {
+		return eventType;
+	}
+
+	public void setEventType(String eventType) {
+		this.eventType = eventType;
+	}
+
 	public String getStatus() {
 		return status;
 	}
@@ -52,11 +66,27 @@ public class EventConsumptionLog {
 		this.status = status;
 	}
 
+	public String getDetail() {
+		return detail;
+	}
+
+	public void setDetail(String detail) {
+		this.detail = detail;
+	}
+
 	public LocalDateTime getCreatedAt() {
 		return createdAt;
 	}
 
 	public void setCreatedAt(LocalDateTime createdAt) {
 		this.createdAt = createdAt;
+	}
+
+	public LocalDateTime getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public void setUpdatedAt(LocalDateTime updatedAt) {
+		this.updatedAt = updatedAt;
 	}
 }

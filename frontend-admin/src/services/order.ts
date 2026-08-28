@@ -1,7 +1,9 @@
 import { request } from './http'
 
 export type OrderStatus =
+  | 'PENDING_STOCK'
   | 'PENDING_PAYMENT'
+  | 'CANCELLING'
   | 'PENDING_SHIPMENT'
   | 'SHIPPED'
   | 'COMPLETED'

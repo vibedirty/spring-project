@@ -55,7 +55,7 @@ export function CheckoutPage() {
   const [addresses, setAddresses] = useState<AddressItem[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null)
   const [cart, setCart] = useState<CartResponse | null>(null)
-  const [idempotencyToken, setIdempotencyToken] = useState<string>(() => generateIdempotencyToken())
+  const [idempotencyToken] = useState<string>(() => generateIdempotencyToken())
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -154,9 +154,6 @@ export function CheckoutPage() {
       })
       void message.success('订单提交成功，正在前往订单详情')
       navigate(orderDetailPath(res.orderNo), { replace: true })
-    } catch {
-      // 提交异常后换取新 Token，确保用户重试时不受旧 Token 锁限制
-      setIdempotencyToken(generateIdempotencyToken())
     } finally {
       setSubmitting(false)
     }

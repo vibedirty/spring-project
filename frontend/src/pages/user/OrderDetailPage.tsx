@@ -53,8 +53,12 @@ function formatDateTime(dateStr: string | null | undefined): string {
 
 function renderStatusTag(status: OrderStatus | string, desc?: string) {
   switch (status) {
+    case 'PENDING_STOCK':
+      return <Tag color="orange">{desc || '库存处理中'}</Tag>
     case 'PENDING_PAYMENT':
       return <Tag color="gold">{desc || '待付款'}</Tag>
+    case 'CANCELLING':
+      return <Tag color="default">{desc || '取消处理中'}</Tag>
     case 'PENDING_SHIPMENT':
       return <Tag color="blue">{desc || '待发货'}</Tag>
     case 'SHIPPED':

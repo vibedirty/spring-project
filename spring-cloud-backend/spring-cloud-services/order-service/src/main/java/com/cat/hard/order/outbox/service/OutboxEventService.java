@@ -23,8 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class OutboxEventService {
 
 	private static final Logger log = LoggerFactory.getLogger(OutboxEventService.class);
-	private static final int MAX_RETRY_COUNT = 5;
-
 	private final OutboxEventMapper outboxEventMapper;
 	private final ObjectMapper objectMapper;
 
@@ -35,9 +33,14 @@ public class OutboxEventService {
 	}
 
 	@Transactional(propagation = Propagation.MANDATORY)
-	public <T> OutboxEvent saveEvent(String eventType, String aggregateType, String aggregateId, T payload) {
+	public <T> OutboxEvent saveEvent(
+			String eventType,
+			String aggregateType,
+			String aggregateId,
+			OutboxPayloadFactory<T> payloadFactory) {
 		String eventId = UUID.randomUUID().toString();
 		String traceId = MDC.get("requestId");
+		T payload = payloadFactory.create(eventId, traceId);
 
 		String payloadJson;
 		try {
@@ -74,31 +77,31 @@ public class OutboxEventService {
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void handlePublishFailure(Long id, int currentRetryCount, Exception exception) {
-		int nextRetryCount = currentRetryCount + 1;
-		OutboxStatus nextStatus = nextRetryCount >= MAX_RETRY_COUNT ? OutboxStatus.FAILED : OutboxStatus.PENDING;
-		// 指数退避：5s, 10s, 20s, 40s...
-		long delaySeconds = (long) Math.min(300, Math.pow(2, nextRetryCount) * 5);
+		int nextRetryCount = currentRetryCount == Integer.MAX_VALUE
+				? Integer.MAX_VALUE
+				: currentRetryCount + 1;
+		int exponent = Math.min(nextRetryCount, 6);
+		long delaySeconds = Math.min(300L, (1L << exponent) * 5L);
 		LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(delaySeconds);
 
 		LambdaUpdateWrapper<OutboxEvent> updateWrapper = new LambdaUpdateWrapper<>();
 		updateWrapper.eq(OutboxEvent::getId, id)
-				.set(OutboxEvent::getStatus, nextStatus)
+				.set(OutboxEvent::getStatus, OutboxStatus.PENDING)
 				.set(OutboxEvent::getRetryCount, nextRetryCount)
 				.set(OutboxEvent::getNextRetryAt, nextRetryAt)
 				.set(OutboxEvent::getUpdatedAt, LocalDateTime.now());
 		outboxEventMapper.update(null, updateWrapper);
 
-		if (nextStatus == OutboxStatus.FAILED) {
-			log.error("Outbox event published failed permanently after {} retries: id={}, cause={}",
-					nextRetryCount, id, exception.getMessage());
-		}
-		else {
-			log.warn("Outbox event published failed, scheduled retry {}: id={}, nextRetryAt={}, cause={}",
-					nextRetryCount, id, nextRetryAt, exception.getMessage());
-		}
+		log.warn("Outbox event published failed, scheduled retry {}: id={}, nextRetryAt={}, cause={}",
+				nextRetryCount, id, nextRetryAt, exception.getMessage());
 	}
 
 	public List<OutboxEvent> findPendingEvents(int limit) {
 		return outboxEventMapper.selectPendingEvents(limit, LocalDateTime.now());
+	}
+
+	@FunctionalInterface
+	public interface OutboxPayloadFactory<T> {
+		T create(String eventId, String traceId);
 	}
 }

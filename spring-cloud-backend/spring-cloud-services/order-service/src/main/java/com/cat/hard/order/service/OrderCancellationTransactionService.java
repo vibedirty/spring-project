@@ -1,7 +1,6 @@
 package com.cat.hard.order.service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -23,213 +22,189 @@ import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.order.messaging.event.OrderCancelledEvent;
 import com.cat.hard.order.outbox.service.OutboxEventService;
 
-import jakarta.annotation.Resource;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class OrderCancellationTransactionService {
 
-	private static final Logger log = LoggerFactory.getLogger(OrderCancellationTransactionService.class);
+	private final OrderMapper orderMapper;
+	private final OrderItemMapper orderItemMapper;
+	private final ProductStockIntegrationService productStockIntegrationService;
+	private final OrderOperateLogMapper orderOperateLogMapper;
+	private final TransactionCallbackService transactionCallbackService;
+	private final OrderBusinessLogService orderBusinessLogService;
+	private final OutboxEventService outboxEventService;
+	private final TransactionTemplate transactionTemplate;
 
-	@Resource
-	private OrderMapper orderMapper;
+	public OrderCancellationTransactionService(
+			OrderMapper orderMapper,
+			OrderItemMapper orderItemMapper,
+			ProductStockIntegrationService productStockIntegrationService,
+			OrderOperateLogMapper orderOperateLogMapper,
+			TransactionCallbackService transactionCallbackService,
+			OrderBusinessLogService orderBusinessLogService,
+			OutboxEventService outboxEventService,
+			TransactionTemplate transactionTemplate) {
+		this.orderMapper = orderMapper;
+		this.orderItemMapper = orderItemMapper;
+		this.productStockIntegrationService = productStockIntegrationService;
+		this.orderOperateLogMapper = orderOperateLogMapper;
+		this.transactionCallbackService = transactionCallbackService;
+		this.orderBusinessLogService = orderBusinessLogService;
+		this.outboxEventService = outboxEventService;
+		this.transactionTemplate = transactionTemplate;
+	}
 
-	@Resource
-	private OrderItemMapper orderItemMapper;
-
-	@Resource
-	private ProductStockIntegrationService productStockIntegrationService;
-
-	@Resource
-	private OrderOperateLogMapper orderOperateLogMapper;
-
-	@Resource
-	private TransactionCallbackService transactionCallbackService;
-
-	@Resource
-	private OrderBusinessLogService orderBusinessLogService;
-
-	@Resource
-	private OutboxEventService outboxEventService;
-
-	@Transactional
 	public boolean cancel(String orderNo, Long userId, UserSummary userSummary) {
-		Order order = getRequiredOwnedOrder(orderNo, userId);
-		if (order.getStatus() == OrderStatus.CANCELLED) {
+		CancellationContext context = transactionTemplate.execute(status ->
+				beginCancellation(orderNo, userId, false));
+		if (context == null) {
 			return false;
 		}
-		if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
-			throw new BusinessException(
-					ErrorCode.BUSINESS_CONFLICT,
-					"只有待付款订单可以取消");
-		}
-
-		LocalDateTime cancelledAt = LocalDateTime.now();
-		if (!updatePendingPaymentToCancelledInternal(
-				orderNo,
-				userId,
-				cancelledAt,
-				false)) {
-			Order latestOrder = orderMapper.selectByOrderNoAndUserId(
-					orderNo,
-					userId);
-			if (latestOrder != null
-					&& latestOrder.getStatus() == OrderStatus.CANCELLED) {
-				return false;
-			}
-			throw new BusinessException(
-					ErrorCode.BUSINESS_CONFLICT,
-					"订单状态已发生变化，请重试");
-		}
-
-		completeCancellation(order, false, userSummary, "用户主动取消订单");
-		return true;
+		restoreStock(context.order());
+		return Boolean.TRUE.equals(transactionTemplate.execute(status ->
+				finishCancellation(context, false, userSummary, "用户主动取消订单")));
 	}
 
-	@Transactional
 	public boolean cancelExpired(String orderNo) {
-		Order order = orderMapper.selectByOrderNo(orderNo);
-		if (order == null
-				|| order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+		CancellationContext context = transactionTemplate.execute(status ->
+				beginCancellation(orderNo, null, true));
+		if (context == null) {
 			return false;
 		}
-
-		LocalDateTime cancelledAt = LocalDateTime.now();
-		LocalDateTime expireAt = order.getExpireAt();
-		if (expireAt == null || expireAt.isAfter(cancelledAt)) {
-			return false;
-		}
-		if (!updatePendingPaymentToCancelledInternal(
-				orderNo,
-				null,
-				cancelledAt,
-				true)) {
-			return false;
-		}
-
-		completeCancellation(order, true, null, "订单支付超时");
-		return true;
+		restoreStock(context.order());
+		return Boolean.TRUE.equals(transactionTemplate.execute(status ->
+				finishCancellation(context, true, null, "订单支付超时")));
 	}
 
-	private boolean updatePendingPaymentToCancelledInternal(
+	public boolean resumeCancellation(String orderNo) {
+		Order order = orderMapper.selectByOrderNo(orderNo);
+		if (order == null || order.getStatus() != OrderStatus.CANCELLING) {
+			return false;
+		}
+		CancellationContext context = new CancellationContext(order);
+		restoreStock(order);
+		return Boolean.TRUE.equals(transactionTemplate.execute(status ->
+				finishCancellation(context, true, null, "Saga 补偿完成订单取消")));
+	}
+
+	private CancellationContext beginCancellation(
 			String orderNo,
 			Long userId,
-			LocalDateTime cancelledAt,
 			boolean requireExpired) {
+		Order order = userId == null
+				? orderMapper.selectByOrderNo(orderNo)
+				: orderMapper.selectByOrderNoAndUserId(orderNo, userId);
+		if (order == null) {
+			if (userId == null) {
+				return null;
+			}
+			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "订单不存在");
+		}
+		if (order.getStatus() == OrderStatus.CANCELLED) {
+			return null;
+		}
+		if (order.getStatus() == OrderStatus.CANCELLING) {
+			return new CancellationContext(order);
+		}
+		if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+			if (requireExpired) {
+				return null;
+			}
+			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "只有待付款订单可以取消");
+		}
 
-		LambdaUpdateWrapper<Order> updateWrapper =
-				new LambdaUpdateWrapper<Order>(Order.class);
-		updateWrapper.eq(Order::getOrderNo, orderNo)
-				.eq(userId != null, Order::getUserId, userId)
+		LocalDateTime now = LocalDateTime.now();
+		if (requireExpired && (order.getExpireAt() == null || order.getExpireAt().isAfter(now))) {
+			return null;
+		}
+		LambdaUpdateWrapper<Order> update = new LambdaUpdateWrapper<>();
+		update.eq(Order::getId, order.getId())
 				.eq(Order::getStatus, OrderStatus.PENDING_PAYMENT)
-				.le(requireExpired, Order::getExpireAt, cancelledAt)
-				.set(Order::getStatus, OrderStatus.CANCELLED)
-				.set(Order::getCancelledAt, cancelledAt)
-				.set(Order::getUpdatedAt, cancelledAt);
-		return orderMapper.update(null, updateWrapper) == 1;
+				.le(requireExpired, Order::getExpireAt, now)
+				.set(Order::getStatus, OrderStatus.CANCELLING)
+				.set(Order::getUpdatedAt, now);
+		if (orderMapper.update(null, update) != 1) {
+			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单状态已发生变化，请重试");
+		}
+		order.setStatus(OrderStatus.CANCELLING);
+		order.setUpdatedAt(now);
+		return new CancellationContext(order);
 	}
 
-	private void completeCancellation(
-			Order order,
+	private void restoreStock(Order order) {
+		List<OrderItem> orderItems = orderItemMapper.selectByOrderId(order.getId());
+		if (orderItems.isEmpty()) {
+			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单明细不存在，无法恢复库存");
+		}
+		List<StockRestorationItem> restorationItems = orderItems.stream()
+				.map(item -> new StockRestorationItem(
+						item.getProductId(),
+						item.getProductName(),
+						item.getQuantity()))
+				.toList();
+		productStockIntegrationService.restoreForOrder(order.getOrderNo(), restorationItems);
+	}
+
+	private boolean finishCancellation(
+			CancellationContext context,
 			boolean automatic,
 			UserSummary userSummary,
 			String reason) {
-		restoreStockByOrderItemsInternal(order);
-		if (automatic) {
-			createSystemCancellationLog(order);
-		} else {
-			createUserCancellationLog(order, userSummary);
+		Order order = context.order();
+		LocalDateTime cancelledAt = LocalDateTime.now();
+		LambdaUpdateWrapper<Order> update = new LambdaUpdateWrapper<>();
+		update.eq(Order::getId, order.getId())
+				.eq(Order::getStatus, OrderStatus.CANCELLING)
+				.set(Order::getStatus, OrderStatus.CANCELLED)
+				.set(Order::getCancelledAt, cancelledAt)
+				.set(Order::getUpdatedAt, cancelledAt);
+		if (orderMapper.update(null, update) != 1) {
+			Order latest = orderMapper.selectById(order.getId());
+			return latest != null && latest.getStatus() == OrderStatus.CANCELLED;
 		}
 
-		// 写入 Outbox 事件
-		OrderCancelledEvent cancelledEvent = new OrderCancelledEvent(
-				null,
-				order.getOrderNo(),
-				order.getUserId(),
-				reason,
-				automatic,
-				LocalDateTime.now(),
-				null);
+		createCancellationLog(order, automatic, userSummary, reason);
 		outboxEventService.saveEvent(
 				"OrderCancelled",
 				"ORDER",
 				order.getOrderNo(),
-				cancelledEvent);
+				(eventId, traceId) -> new OrderCancelledEvent(
+						eventId,
+						order.getOrderNo(),
+						order.getUserId(),
+						reason,
+						automatic,
+						cancelledAt,
+						traceId));
 
-		registerCancellationLogAfterCommit(order, automatic);
-	}
-
-	private Order getRequiredOwnedOrder(String orderNo, Long userId) {
-		Order order = orderMapper.selectByOrderNoAndUserId(orderNo, userId);
-		if (order == null) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"订单不存在");
-		}
-		return order;
-	}
-
-	private void restoreStockByOrderItemsInternal(Order order) {
-		List<OrderItem> orderItems = orderItemMapper.selectByOrderId(order.getId());
-		if (orderItems.isEmpty()) {
-			throw new BusinessException(
-					ErrorCode.BUSINESS_CONFLICT,
-					"订单明细不存在，无法恢复库存");
-		}
-
-		List<StockRestorationItem> restorationItems = new ArrayList<>();
-		for (OrderItem orderItem : orderItems) {
-			restorationItems.add(new StockRestorationItem(
-					orderItem.getProductId(),
-					orderItem.getProductName(),
-					orderItem.getQuantity()));
-		}
-		try {
-			productStockIntegrationService.restoreForOrder(order.getOrderNo(), restorationItems);
-		}
-		catch (Exception e) {
-			log.warn("订单{}恢复库存失败，将由 Saga 补偿任务重试", order.getOrderNo(), e);
-		}
-	}
-
-	private void createUserCancellationLog(Order order, UserSummary userSummary) {
-		OrderOperateLog operateLog = new OrderOperateLog();
-		operateLog.setOrderId(order.getId());
-		operateLog.setOperatorType(OrderOperatorType.USER);
-		operateLog.setOperatorId(order.getUserId());
-		operateLog.setOperatorName(userSummary != null ? userSummary.nickname() : "用户");
-		operateLog.setOperation(OrderOperation.CANCEL);
-		operateLog.setFromStatus(OrderStatus.PENDING_PAYMENT);
-		operateLog.setToStatus(OrderStatus.CANCELLED);
-		operateLog.setReason("用户主动取消订单");
-		orderOperateLogMapper.insert(operateLog);
-	}
-
-	private void createSystemCancellationLog(Order order) {
-		OrderOperateLog operateLog = new OrderOperateLog();
-		operateLog.setOrderId(order.getId());
-		operateLog.setOperatorType(OrderOperatorType.SYSTEM);
-		operateLog.setOperatorName("SYSTEM");
-		operateLog.setOperation(OrderOperation.AUTO_CANCEL);
-		operateLog.setFromStatus(OrderStatus.PENDING_PAYMENT);
-		operateLog.setToStatus(OrderStatus.CANCELLED);
-		operateLog.setReason("订单支付超时");
-		orderOperateLogMapper.insert(operateLog);
-	}
-
-	private void registerCancellationLogAfterCommit(
-			Order order,
-			boolean automatic) {
 		String orderNo = order.getOrderNo();
 		Long userId = order.getUserId();
 		transactionCallbackService.executeAfterCommit(
-				() -> orderBusinessLogService.logCancelled(
-						orderNo,
-						userId,
-						automatic));
+				() -> orderBusinessLogService.logCancelled(orderNo, userId, automatic));
+		return true;
+	}
+
+	private void createCancellationLog(
+			Order order,
+			boolean automatic,
+			UserSummary userSummary,
+			String reason) {
+		OrderOperateLog operateLog = new OrderOperateLog();
+		operateLog.setOrderId(order.getId());
+		operateLog.setOperatorType(automatic ? OrderOperatorType.SYSTEM : OrderOperatorType.USER);
+		operateLog.setOperatorId(automatic ? null : order.getUserId());
+		operateLog.setOperatorName(automatic
+				? "SYSTEM"
+				: userSummary != null ? userSummary.nickname() : "用户");
+		operateLog.setOperation(automatic ? OrderOperation.AUTO_CANCEL : OrderOperation.CANCEL);
+		operateLog.setFromStatus(OrderStatus.PENDING_PAYMENT);
+		operateLog.setToStatus(OrderStatus.CANCELLED);
+		operateLog.setReason(reason);
+		orderOperateLogMapper.insert(operateLog);
+	}
+
+	private record CancellationContext(Order order) {
 	}
 }

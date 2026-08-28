@@ -107,7 +107,7 @@ public class OutboxEventPublisherTask {
 				break;
 			}
 			default:
-				log.warn("Unknown outbox event type: {}", eventType);
+				throw new IllegalArgumentException("Unknown outbox event type: " + eventType);
 		}
 	}
 }

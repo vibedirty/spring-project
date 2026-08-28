@@ -7,6 +7,7 @@ public enum OrderStatus {
 
 	PENDING_STOCK("待预占库存"),
 	PENDING_PAYMENT("待付款"),
+	CANCELLING("取消处理中"),
 	PENDING_SHIPMENT("待发货"),
 	SHIPPED("已发货"),
 	COMPLETED("已完成"),
@@ -32,7 +33,9 @@ public enum OrderStatus {
 						|| targetStatus == CANCELLED;
 			case PENDING_PAYMENT:
 				return targetStatus == PENDING_SHIPMENT
-						|| targetStatus == CANCELLED;
+						|| targetStatus == CANCELLING;
+			case CANCELLING:
+				return targetStatus == CANCELLED;
 			case PENDING_SHIPMENT:
 				return targetStatus == SHIPPED;
 			case SHIPPED:

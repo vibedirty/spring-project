@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS `stock_operation_log` (
     `order_no` VARCHAR(64) NOT NULL COMMENT '业务订单号',
     `operation_type` VARCHAR(32) NOT NULL COMMENT '操作类型：DEDUCT-扣减，RESTORE-恢复',
     `status` VARCHAR(32) NOT NULL DEFAULT 'PROCESSING' COMMENT '状态：PROCESSING-处理中，SUCCESS-成功，FAILED-失败',
+    `owner_token` VARCHAR(64) NULL COMMENT '当前处理者的 fencing token',
     `detail` TEXT NULL COMMENT '操作详情快照（JSON 格式）',
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
     `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '订单 ID',
     `order_no` VARCHAR(32) NOT NULL COMMENT '对外订单号',
     `user_id` BIGINT UNSIGNED NOT NULL COMMENT '下单用户 ID',
+    `idempotency_token` VARCHAR(64) NULL COMMENT '用户维度的下单幂等 token',
     `total_amount` DECIMAL(12, 2) NOT NULL COMMENT '订单总金额',
     `status` VARCHAR(24) NOT NULL DEFAULT 'PENDING_PAYMENT' COMMENT '订单状态',
     `expire_at` DATETIME(3) NOT NULL COMMENT '待付款截止时间',
@@ -183,6 +185,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
         ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_orders_order_no` (`order_no`),
+    UNIQUE KEY `uk_orders_user_idempotency` (`user_id`, `idempotency_token`),
     KEY `idx_orders_user_created` (`user_id`, `created_at`, `id`),
     KEY `idx_orders_user_status_created`
         (`user_id`, `status`, `created_at`, `id`),
@@ -338,4 +341,3 @@ WHERE NOT EXISTS (
 );
 
 SET FOREIGN_KEY_CHECKS = 1;
-

@@ -20,6 +20,8 @@ public class Order {
 
 	private Long userId;
 
+	private String idempotencyToken;
+
 	private BigDecimal totalAmount;
 
 	private OrderStatus status = OrderStatus.PENDING_STOCK;
@@ -66,6 +68,14 @@ public class Order {
 
 	public void setUserId(Long userId) {
 		this.userId = userId;
+	}
+
+	public String getIdempotencyToken() {
+		return idempotencyToken;
+	}
+
+	public void setIdempotencyToken(String idempotencyToken) {
+		this.idempotencyToken = idempotencyToken;
 	}
 
 	public BigDecimal getTotalAmount() {

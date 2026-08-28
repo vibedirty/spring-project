@@ -36,12 +36,15 @@ import com.cat.hard.product.stock.mapper.StockOperationLogMapper;
 
 import jakarta.annotation.Resource;
 
-import org.springframework.dao.DuplicateKeyException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class StockService {
+	private static final Logger log = LoggerFactory.getLogger(StockService.class);
 
 	@Resource
 	private ProductMapper productMapper;
@@ -57,6 +60,12 @@ public class StockService {
 
 	@Resource
 	private TransactionCallbackService transactionCallbackService;
+
+	@Resource
+	private StockOperationStateService stockOperationStateService;
+
+	@Resource
+	private TransactionTemplate transactionTemplate;
 
 	@Transactional
 	public Product increase(Long productId, StockAdjustmentRequest request) {
@@ -169,7 +178,6 @@ public class StockService {
 		return updatedProduct;
 	}
 
-	@Transactional
 	public void decreaseForOrder(
 			String orderNo,
 			List<StockDeductionItem> items) {
@@ -190,38 +198,33 @@ public class StockService {
 		}
 
 		String payloadDigest = buildDeductionDigest(items);
-		StockOperationLog opLog = new StockOperationLog();
-		opLog.setOrderNo(businessNo);
-		opLog.setOperationType(StockOperationType.DEDUCT);
-		opLog.setStatus(StockOperationStatus.PROCESSING);
-		opLog.setDetail(payloadDigest);
+		StockOperationStateService.ClaimResult claim = stockOperationStateService.claim(
+				businessNo,
+				StockOperationType.DEDUCT,
+				payloadDigest);
+		if (claim.alreadySucceeded()) {
+			return;
+		}
 
 		try {
-			stockOperationLogMapper.insert(opLog);
+			transactionTemplate.executeWithoutResult(status ->
+					performOrderDeduction(
+							businessNo,
+							items,
+							claim.operationId(),
+							claim.ownerToken()));
 		}
-		catch (DuplicateKeyException ex) {
-			LambdaQueryWrapper<StockOperationLog> opQuery = new LambdaQueryWrapper<StockOperationLog>()
-					.eq(StockOperationLog::getOrderNo, businessNo)
-					.eq(StockOperationLog::getOperationType, StockOperationType.DEDUCT);
-			StockOperationLog existingOp = stockOperationLogMapper.selectOne(opQuery);
-			if (existingOp == null) {
-				throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "并发操作冲突，请重试");
-			}
-			if (existingOp.getDetail() != null && !existingOp.getDetail().equals(payloadDigest)) {
-				throw new BusinessException(
-						ErrorCode.BUSINESS_CONFLICT,
-						"幂等冲突：该订单已存在不同内容的扣减请求");
-			}
-			if (StockOperationStatus.SUCCESS.equals(existingOp.getStatus())) {
-				return;
-			}
-			if (StockOperationStatus.PROCESSING.equals(existingOp.getStatus())) {
-				throw new BusinessException(
-						ErrorCode.BUSINESS_CONFLICT,
-						"订单库存扣减正在处理中，请勿重复提交");
-			}
-			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单库存扣减状态异常：" + existingOp.getStatus());
+		catch (RuntimeException exception) {
+			markOperationFailed(claim.operationId(), claim.ownerToken(), exception);
+			throw exception;
 		}
+	}
+
+	private void performOrderDeduction(
+			String businessNo,
+			List<StockDeductionItem> items,
+			Long operationId,
+			String ownerToken) {
 
 		List<StockLog> stockLogs = new ArrayList<>();
 		for (StockDeductionItem item : items) {
@@ -259,13 +262,11 @@ public class StockService {
 
 		stockLogMapper.insert(stockLogs);
 
-		opLog.setStatus(StockOperationStatus.SUCCESS);
-		stockOperationLogMapper.updateById(opLog);
+		markOperationSucceeded(operationId, ownerToken);
 
 		evictProductDetailsAfterCommit(stockLogs);
 	}
 
-	@Transactional
 	public void restoreForOrder(
 			String orderNo,
 			List<StockRestorationItem> items) {
@@ -309,38 +310,33 @@ public class StockService {
 					"恢复库存商品与原订单扣减商品明细不一致");
 		}
 
-		StockOperationLog restoreLog = new StockOperationLog();
-		restoreLog.setOrderNo(businessNo);
-		restoreLog.setOperationType(StockOperationType.RESTORE);
-		restoreLog.setStatus(StockOperationStatus.PROCESSING);
-		restoreLog.setDetail(payloadDigest);
+		StockOperationStateService.ClaimResult claim = stockOperationStateService.claim(
+				businessNo,
+				StockOperationType.RESTORE,
+				payloadDigest);
+		if (claim.alreadySucceeded()) {
+			return;
+		}
 
 		try {
-			stockOperationLogMapper.insert(restoreLog);
+			transactionTemplate.executeWithoutResult(status ->
+					performOrderRestoration(
+							businessNo,
+							items,
+							claim.operationId(),
+							claim.ownerToken()));
 		}
-		catch (DuplicateKeyException ex) {
-			LambdaQueryWrapper<StockOperationLog> restoreQuery = new LambdaQueryWrapper<StockOperationLog>()
-					.eq(StockOperationLog::getOrderNo, businessNo)
-					.eq(StockOperationLog::getOperationType, StockOperationType.RESTORE);
-			StockOperationLog existingRestore = stockOperationLogMapper.selectOne(restoreQuery);
-			if (existingRestore == null) {
-				throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "并发操作冲突，请重试");
-			}
-			if (existingRestore.getDetail() != null && !existingRestore.getDetail().equals(payloadDigest)) {
-				throw new BusinessException(
-						ErrorCode.BUSINESS_CONFLICT,
-						"幂等冲突：该订单已存在不同内容的恢复请求");
-			}
-			if (StockOperationStatus.SUCCESS.equals(existingRestore.getStatus())) {
-				return;
-			}
-			if (StockOperationStatus.PROCESSING.equals(existingRestore.getStatus())) {
-				throw new BusinessException(
-						ErrorCode.BUSINESS_CONFLICT,
-						"订单库存恢复正在处理中，请勿重复提交");
-			}
-			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "订单库存恢复状态异常：" + existingRestore.getStatus());
+		catch (RuntimeException exception) {
+			markOperationFailed(claim.operationId(), claim.ownerToken(), exception);
+			throw exception;
 		}
+	}
+
+	private void performOrderRestoration(
+			String businessNo,
+			List<StockRestorationItem> items,
+			Long operationId,
+			String ownerToken) {
 
 		List<StockLog> stockLogs = new ArrayList<>();
 		for (StockRestorationItem item : items) {
@@ -383,10 +379,33 @@ public class StockService {
 
 		stockLogMapper.insert(stockLogs);
 
-		restoreLog.setStatus(StockOperationStatus.SUCCESS);
-		stockOperationLogMapper.updateById(restoreLog);
+		markOperationSucceeded(operationId, ownerToken);
 
 		evictProductDetailsAfterCommit(stockLogs);
+	}
+
+	private void markOperationSucceeded(Long operationId, String ownerToken) {
+		LambdaUpdateWrapper<StockOperationLog> update = new LambdaUpdateWrapper<>();
+		update.eq(StockOperationLog::getId, operationId)
+				.eq(StockOperationLog::getStatus, StockOperationStatus.PROCESSING)
+				.eq(StockOperationLog::getOwnerToken, ownerToken)
+				.set(StockOperationLog::getStatus, StockOperationStatus.SUCCESS);
+		if (stockOperationLogMapper.update(null, update) != 1) {
+			throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "库存操作状态已变化，无法提交结果");
+		}
+	}
+
+	private void markOperationFailed(
+			Long operationId,
+			String ownerToken,
+			RuntimeException originalException) {
+		try {
+			stockOperationStateService.markFailed(operationId, ownerToken);
+		}
+		catch (RuntimeException stateException) {
+			log.error("记录库存操作失败状态异常，operationId={}", operationId, stateException);
+			originalException.addSuppressed(stateException);
+		}
 	}
 
 	private String buildDeductionDigest(List<StockDeductionItem> items) {
@@ -409,39 +428,25 @@ public class StockService {
 			throw new BusinessException(ErrorCode.PARAMETER_ERROR, "订单号不能为空");
 		}
 
-		LambdaQueryWrapper<StockLog> queryWrapper = new LambdaQueryWrapper<StockLog>()
-				.eq(StockLog::getBusinessNo, businessNo)
-				.orderByAsc(StockLog::getCreatedAt)
-				.orderByAsc(StockLog::getId);
-		List<StockLog> logs = stockLogMapper.selectList(queryWrapper);
-		fillProductInfo(logs);
-
-		boolean isDeducted = false;
-		boolean isRestored = false;
-
 		LambdaQueryWrapper<StockOperationLog> opQuery = new LambdaQueryWrapper<StockOperationLog>()
-				.eq(StockOperationLog::getOrderNo, businessNo);
+				.eq(StockOperationLog::getOrderNo, businessNo)
+				.orderByDesc(StockOperationLog::getOperationType);
 		List<StockOperationLog> opLogs = stockOperationLogMapper.selectList(opQuery);
-		for (StockOperationLog op : opLogs) {
-			if ("DEDUCT".equals(op.getOperationType()) && "SUCCESS".equals(op.getStatus())) {
-				isDeducted = true;
-			}
-			else if ("RESTORE".equals(op.getOperationType()) && "SUCCESS".equals(op.getStatus())) {
-				isRestored = true;
-			}
+		StockOperationLog selected = opLogs.stream()
+				.filter(op -> StockOperationType.RESTORE.equals(op.getOperationType()))
+				.findFirst()
+				.orElseGet(() -> opLogs.stream()
+						.filter(op -> StockOperationType.DEDUCT.equals(op.getOperationType()))
+						.findFirst()
+						.orElse(null));
+		if (selected == null) {
+			return new StockOperationResultResponse(businessNo, null, "NOT_FOUND", null);
 		}
-		List<StockLogResponse> logResponses = new ArrayList<>();
-		for (StockLog log : logs) {
-			if (log.getChangeQuantity() != null && log.getChangeQuantity() < 0) {
-				isDeducted = true;
-			}
-			else if (log.getChangeQuantity() != null && log.getChangeQuantity() > 0) {
-				isRestored = true;
-			}
-			logResponses.add(StockLogResponse.from(log));
-		}
-
-		return new StockOperationResultResponse(businessNo, isDeducted, isRestored, logResponses);
+		return new StockOperationResultResponse(
+				businessNo,
+				selected.getOperationType().name(),
+				selected.getStatus().name(),
+				selected.getDetail());
 	}
 
 	public Page<StockLog> pageLog(PageRequest request) {

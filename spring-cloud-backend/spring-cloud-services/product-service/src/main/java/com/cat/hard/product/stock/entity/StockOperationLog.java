@@ -22,6 +22,8 @@ public class StockOperationLog {
 
 	private StockOperationStatus status;
 
+	private String ownerToken;
+
 	private String detail;
 
 	@TableField(fill = FieldFill.INSERT)
@@ -60,6 +62,14 @@ public class StockOperationLog {
 
 	public void setStatus(StockOperationStatus status) {
 		this.status = status;
+	}
+
+	public String getOwnerToken() {
+		return ownerToken;
+	}
+
+	public void setOwnerToken(String ownerToken) {
+		this.ownerToken = ownerToken;
 	}
 
 	public String getDetail() {
