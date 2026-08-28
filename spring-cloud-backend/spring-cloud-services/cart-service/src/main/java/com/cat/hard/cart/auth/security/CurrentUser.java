@@ -12,15 +12,11 @@ import org.springframework.stereotype.Component;
 public class CurrentUser {
 
 	public Long getUserId() {
-		return requireClaims().userId();
-	}
-
-	public String getUsername() {
-		return requireClaims().username();
+		return requireClaims().getUserId();
 	}
 
 	public String getRole() {
-		return requireClaims().role();
+		return requireClaims().getRole();
 	}
 
 	public JwtUserClaims getClaims() {
@@ -35,7 +31,7 @@ public class CurrentUser {
 
 	private JwtUserClaims requireClaims() {
 		JwtUserClaims claims = getClaims();
-		if (claims == null || claims.userId() == null) {
+		if (claims == null || claims.getUserId() == null) {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED, "用户未登录或登录已过期");
 		}
 		return claims;

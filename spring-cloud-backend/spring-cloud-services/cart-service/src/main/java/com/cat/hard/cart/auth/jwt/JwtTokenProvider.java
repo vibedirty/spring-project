@@ -1,7 +1,7 @@
 package com.cat.hard.cart.auth.jwt;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.util.Date;
 
 import javax.crypto.SecretKey;
 
@@ -18,56 +18,50 @@ import org.springframework.stereotype.Component;
 @Component
 public class JwtTokenProvider {
 
-	private static final String CLAIM_USER_ID = "userId";
-	private static final String CLAIM_ROLE = "role";
+	public static final String CLAIM_USER_ID = "userId";
+	public static final String CLAIM_ROLE = "role";
 
 	@Resource
 	private JwtProperties jwtProperties;
 
-	public JwtUserClaims parseClaims(String token) {
+	public JwtUserClaims parseToken(String token) {
+		if (token == null || token.trim().isEmpty()) {
+			return null;
+		}
+
 		try {
 			Claims claims = Jwts.parser()
-					.verifyWith(signingKey())
+					.verifyWith(getSigningKey())
 					.build()
 					.parseSignedClaims(token)
 					.getPayload();
 
-			Object userIdValue = claims.get(CLAIM_USER_ID);
-			Long userId = null;
-			if (userIdValue instanceof Number number) {
-				userId = number.longValue();
-			}
-			else if (userIdValue instanceof String stringValue && !stringValue.isBlank()) {
-				userId = Long.parseLong(stringValue);
+			Number userId = claims.get(CLAIM_USER_ID, Number.class);
+			String role = claims.get(CLAIM_ROLE, String.class);
+			String tokenId = claims.getId();
+			Date issuedAt = claims.getIssuedAt();
+			Date expiresAt = claims.getExpiration();
+
+			if (tokenId == null || tokenId.isBlank()
+					|| userId == null || role == null
+					|| issuedAt == null || expiresAt == null) {
+				return null;
 			}
 
-			String role = claims.get(CLAIM_ROLE, String.class);
 			return new JwtUserClaims(
-					userId,
-					claims.getSubject(),
+					tokenId,
+					userId.longValue(),
 					role,
-					claims.getId());
+					issuedAt.toInstant(),
+					expiresAt.toInstant());
 		}
 		catch (JwtException | IllegalArgumentException exception) {
 			return null;
 		}
 	}
 
-	private SecretKey signingKey() {
-		String configuredSecret = jwtProperties.getSecret();
-		if (configuredSecret == null || configuredSecret.isBlank()) {
-			throw new IllegalStateException("JWT secret is not configured");
-		}
-		byte[] secretBytes;
-		try {
-			secretBytes = Base64.getDecoder().decode(configuredSecret);
-		}
-		catch (IllegalArgumentException exception) {
-			secretBytes = configuredSecret.getBytes(StandardCharsets.UTF_8);
-		}
-		if (secretBytes.length < 32) {
-			throw new IllegalStateException("JWT secret must be at least 256 bits (32 bytes)");
-		}
-		return Keys.hmacShaKeyFor(secretBytes);
+	private SecretKey getSigningKey() {
+		return Keys.hmacShaKeyFor(
+				jwtProperties.secret().getBytes(StandardCharsets.UTF_8));
 	}
 }

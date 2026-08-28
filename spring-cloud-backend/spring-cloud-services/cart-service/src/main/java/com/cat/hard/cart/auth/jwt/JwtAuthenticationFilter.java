@@ -35,12 +35,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 		String token = resolveToken(request);
 		if (token != null) {
-			JwtUserClaims claims = jwtTokenProvider.parseClaims(token);
+			JwtUserClaims claims = jwtTokenProvider.parseToken(token);
 			if (claims != null
-					&& claims.userId() != null
-					&& jwtSessionService.isActive(claims.userId(), token)) {
+					&& claims.getUserId() != null
+					&& jwtSessionService.isActive(token, claims)) {
 
-				String role = claims.role();
+				String role = claims.getRole();
 				List<SimpleGrantedAuthority> authorities = (role != null && !role.isBlank())
 						? List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
 						: List.of();

@@ -67,10 +67,10 @@ spring:
       database: ${REDIS_DATABASE:0}
       timeout: 3000ms
 
-security:
+app:
   jwt:
-    secret: ${JWT_SECRET:d29uZy1qaWUtaGFyZC1zZWNyZXQta2V5LTMyeHh4eHg=}
-    expiration: ${JWT_EXPIRATION:PT168H}
+    secret: ${JWT_SECRET:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+    expiration: ${JWT_EXPIRATION:7d}
 
 management:
   endpoints:
