@@ -99,7 +99,7 @@
 | 服务调用     | OpenFeign                 | P3         |
 | 客户端负载均衡  | Spring Cloud LoadBalancer | P1、P3      |
 | 限流、熔断和降级 | Sentinel                  | P3         |
-| 消息队列     | RocketMQ                  | P6         |
+| 消息队列     | RabbitMQ                  | P6         |
 | 可靠事件     | Outbox + 幂等消费             | P6         |
 | 跨服务流程    | Saga + 补偿任务               | P6         |
 | 分布式事务对比  | Seata AT/TCC 实验           | P7         |
@@ -129,7 +129,7 @@
 
 - 使用 Maven BOM 管理 Spring Cloud 和 Spring Cloud Alibaba 版本。
 
-- 业务模块不得单独覆盖 Nacos、Sentinel、RocketMQ、Seata 等传递依赖版本。
+- 业务模块不得单独覆盖 Nacos、Sentinel、RabbitMQ、Seata 等传递依赖版本。
 
 - 所有服务统一 Java 17。
 
@@ -206,7 +206,7 @@ gateway-service
                     `---> product-service
 
 所有应用注册到 Nacos；配置由 Nacos Config 分组管理。
-订单事件通过 RocketMQ 传递。
+订单事件通过 RabbitMQ 传递。
 ```
 
 ## 6. 综合优先级和难度
@@ -221,7 +221,7 @@ gateway-service
 | 3  | P3 | 服务通信与治理         | 高   | 3  | OpenFeign、LoadBalancer、Sentinel、超时、熔断和降级 |
 | 4  | P4 | Cart Service    | 中高  | 3  | Redis 数据所有权、商品批量查询、远程依赖降级                |
 | 5  | P5 | Product Service | 高   | 4  | 分类、商品、库存、缓存、幂等库存接口                       |
-| 6  | P6 | Order Service   | 最高  | 5  | RocketMQ、Outbox、Saga、幂等消费、补偿任务           |
+| 6  | P6 | Order Service   | 最高  | 5  | RabbitMQ、Outbox、Saga、幂等消费、补偿任务           |
 | 7  | P7 | 高级实验和可观测性       | 中高  | 4  | Seata、链路追踪、故障演练、独立 Schema 对比实验           |
 
 推荐顺序：
@@ -233,7 +233,7 @@ P0 环境和版本基线
   -> P3 OpenFeign + Sentinel
   -> P4 Cart Service
   -> P5 Product Service
-  -> P6 Order Service + RocketMQ + Saga
+  -> P6 Order Service + RabbitMQ + Saga
   -> P7 Seata、Tracing 和故障演练
 ```
 
@@ -584,7 +584,7 @@ GET /internal/users/{userId}/addresses/{addressId}
 
 - 原单体停止写商品相关表和商品缓存。
 
-### P6：Order Service、RocketMQ、Outbox 和 Saga
+### P6：Order Service、RabbitMQ、Outbox 和 Saga
 
 #### 目标
 
@@ -595,21 +595,21 @@ GET /internal/users/{userId}/addresses/{addressId}
 1. 创建 `order-service` 并注册到 Nacos。
 2. 迁移订单创建、查询、支付、取消、超时、发货和确认收货。
 3. `order-service` 成为所有订单表及订单 Redis Key 的唯一写入者。
-4. 部署 RocketMQ NameServer、Broker 和管理控制台。
+4. 部署 RabbitMQ（带 management 管理控制台）并完成 Spring Boot AMQP 客户端接入。
 5. 在订单数据库增加 `outbox_event`，业务状态和待发送事件在同一本地事务中提交。
-6. 实现 Outbox 发布任务、发送状态、退避重试和失败告警。
-7. 实现消费幂等记录、重复消息测试、失败重试和死信处理。
-8. 设计并发布事件：
+6. 实现 Outbox 发布任务、发送状态、退避重试、Publisher Confirm 发布确认与失败告警。
+7. 实现消费幂等记录、重复消息测试、消费端手动 ACK、失败重试和死信处理（DLX）。
+8. 设计并发布事件（基于 Exchange / RoutingKey 路由）：
 
-   - `OrderCreated`
+   - `OrderCreated`（订单创建事件）
 
-   - `OrderPaid`
+   - `OrderPaid`（订单支付完成事件）
 
-   - `OrderCancelled`
+   - `OrderCancelled`（订单取消事件）
 
-   - `CartClearRequested`
+   - `CartClearRequested`（购物车异步清理请求）
 
-   - `OrderTimeoutScheduled`
+   - `OrderTimeoutScheduled`（订单超时延时关单：基于 TTL + 死信交换机 DLX 实现）
 9. 创建订单流程改造成 Saga：
 
 ```text
@@ -621,7 +621,7 @@ GET /internal/users/{userId}/addresses/{addressId}
         v
 product-service 按 orderNo 幂等扣减库存
         |
-        |-- 成功 --> PENDING_PAYMENT + Outbox 事件
+        |-- 成功 --> PENDING_PAYMENT + Outbox 事件 (投递 RabbitMQ)
         `-- 失败 --> CREATE_FAILED/CANCELLED
 ```
 
@@ -629,7 +629,7 @@ product-service 按 orderNo 幂等扣减库存
 11. 库存扣减成功但订单更新失败时，执行幂等恢复并由补偿任务持续核对。
 12. 支付通过 `OrderPaid` 事件更新商品销量。
 13. 下单成功通过 `CartClearRequested` 幂等清理购物车。
-14. 订单超时仍以 MySQL 为最终依据，Redis 和消息失败时由补偿任务兜底。
+14. 订单超时仍以 MySQL 为最终依据，RabbitMQ 延时死信消息和 Redis 失败时由补偿任务兜底。
 15. Gateway 将订单路径切换到 `order-service`，原单体退出业务流量。
 
 #### 验收标准
@@ -642,9 +642,9 @@ product-service 按 orderNo 幂等扣减库存
 
 - 主动取消与超时取消并发时库存只恢复一次。
 
-- 重复 RocketMQ 消息不会重复增加销量或清理非目标购物车数据。
+- 重复 RabbitMQ 消息不会重复增加销量或清理非目标购物车数据。
 
-- Broker 暂停后 Outbox 事件能够在恢复后继续发送。
+- RabbitMQ 暂停后 Outbox 事件能够在恢复后继续发送。
 
 - 任意远程调用超时后，系统最终可以通过查询、重试或补偿达到一致状态。
 
@@ -671,7 +671,7 @@ product-service 按 orderNo 幂等扣减库存
 
    - Saga + Outbox + 补偿。
 5. 在同一 MySQL 实例建立独立 Schema，模拟每服务独立数据库并删除跨服务外键。
-6. 引入 Micrometer Tracing，在 Gateway、Feign 和 RocketMQ 链路中传递 Trace ID。
+6. 引入 Micrometer Tracing，在 Gateway、Feign 和 RabbitMQ 链路中传递 Trace ID。
 7. 建立统一日志、指标和告警视图。
 8. 执行故障演练：
 
@@ -685,7 +685,7 @@ product-service 按 orderNo 幂等扣减库存
 
    - Redis 数据丢失；
 
-   - RocketMQ 重复消息和积压；
+   - RabbitMQ 重复消息和积压；
 
    - Outbox 发布进程停止；
 
@@ -819,7 +819,7 @@ feature/ms-p7-distributed-lab
 
 - 查询路由可快速切回原单体；写路由回退前必须确认唯一写入者。
 
-- RocketMQ、Outbox 和 Saga 上线前准备按 `orderNo` 的订单、库存和事件对账能力。
+- RabbitMQ、Outbox 和 Saga 上线前准备按 `orderNo` 的订单、库存和事件对账能力。
 
 ## 12. 总体验收标准
 
@@ -843,7 +843,7 @@ feature/ms-p7-distributed-lab
 
 - 订单、库存、支付、取消和发货保持并发与幂等保证。
 
-- RocketMQ 重复、延迟和暂时不可用不会产生重复副作用或永久丢失业务事件。
+- RabbitMQ 重复、延迟和暂时不可用不会产生重复副作用或永久丢失业务事件。
 
 - 可以演示并解释 Saga、Outbox、Seata 的差异。
 
