@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.cat.hard.cart.auth.security.CurrentUser;
 import com.cat.hard.cart.common.error.ErrorCode;
 import com.cat.hard.cart.common.exception.BusinessException;
@@ -33,237 +34,256 @@ import org.springframework.stereotype.Service;
 @Service
 public class CartService {
 
-	private static final Logger log = LoggerFactory.getLogger(CartService.class);
+    private static final Logger log = LoggerFactory.getLogger(CartService.class);
 
-	private static final String KEY_PREFIX = "cart:";
-	private static final String PRODUCT_MISSING_REASON = "商品不存在或已删除";
-	private static final String PRODUCT_OFF_SALE_REASON = "商品已下架";
-	private static final String INSUFFICIENT_STOCK_REASON = "商品库存不足";
-	private static final String PRODUCT_SERVICE_UNAVAILABLE_REASON = "商品服务暂时不可用";
-	private static final String STATUS_ON_SALE = "ON_SALE";
+    private static final String KEY_PREFIX = "cart:";
+    private static final String PRODUCT_MISSING_REASON = "商品不存在或已删除";
+    private static final String PRODUCT_OFF_SALE_REASON = "商品已下架";
+    private static final String INSUFFICIENT_STOCK_REASON = "商品库存不足";
+    private static final String PRODUCT_SERVICE_UNAVAILABLE_REASON = "商品服务暂时不可用";
+    private static final String STATUS_ON_SALE = "ON_SALE";
 
-	@Resource
-	private StringRedisTemplate stringRedisTemplate;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
-	@Resource
-	private ProductQueryService productQueryService;
+    @Resource
+    private ProductQueryService productQueryService;
 
-	@Resource
-	private CurrentUser currentUser;
+    @Resource
+    private CurrentUser currentUser;
 
-	public CartItem add(CartItemAddRequest request) {
-		Long userId = currentUser.getUserId();
-		Long productId = request.getProductId();
-		Integer quantity = request.getQuantity();
+    public CartItem add(CartItemAddRequest request) {
+        Long userId = currentUser.getUserId();
+        Long productId = request.getProductId();
+        Integer quantity = request.getQuantity();
 
-		ProductSummary product = productQueryService.getProductSummary(productId);
-		if (product == null || !STATUS_ON_SALE.equals(product.status())) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"商品不存在或已下架");
-		}
+        ProductSummary product = productQueryService.getProductSummary(productId);
+        if (product == null || !STATUS_ON_SALE.equals(product.status())) {
+            throw new BusinessException(
+                    ErrorCode.RESOURCE_NOT_FOUND,
+                    "商品不存在或已下架");
+        }
 
-		HashOperations<String, Object, Object> hashOperations =
-				stringRedisTemplate.opsForHash();
-		String cartKey = KEY_PREFIX + userId;
-		String itemKey = productId.toString();
-		Object storedValue = hashOperations.get(cartKey, itemKey);
-		CartItem item = null;
-		if (storedValue != null) {
-			item = CartItem.fromJson(storedValue.toString());
-		}
-		if (item == null) {
-			item = new CartItem(
-					productId,
-					quantity,
-					true,
-					LocalDateTime.now());
-		}
-		else {
-			long newQuantity = item.getQuantity().longValue() + quantity;
-			if (newQuantity > 99) {
-				throw new BusinessException(
-						ErrorCode.BUSINESS_CONFLICT,
-						"单个商品数量不能超过99");
-			}
-			item.setQuantity((int) newQuantity);
-		}
+        HashOperations<String, Object, Object> hashOperations =
+                stringRedisTemplate.opsForHash();
+        String cartKey = KEY_PREFIX + userId;
+        String itemKey = productId.toString();
+        Object storedValue = hashOperations.get(cartKey, itemKey);
+        CartItem item = null;
+        if (storedValue != null) {
+            item = CartItem.fromJson(storedValue.toString());
+        }
+        if (item == null) {
+            item = new CartItem(
+                    productId,
+                    quantity,
+                    true,
+                    LocalDateTime.now());
+        } else {
+            long newQuantity = item.getQuantity().longValue() + quantity;
+            if (newQuantity > 99) {
+                throw new BusinessException(
+                        ErrorCode.BUSINESS_CONFLICT,
+                        "单个商品数量不能超过99");
+            }
+            item.setQuantity((int) newQuantity);
+        }
 
-		hashOperations.put(cartKey, itemKey, item.toJson());
-		return item;
-	}
+        hashOperations.put(cartKey, itemKey, item.toJson());
+        return item;
+    }
 
-	public CartItem update(Long productId, CartItemUpdateRequest request) {
-		Long userId = currentUser.getUserId();
-		HashOperations<String, Object, Object> hashOperations =
-				stringRedisTemplate.opsForHash();
-		String cartKey = KEY_PREFIX + userId;
-		String itemKey = productId.toString();
-		Object storedValue = hashOperations.get(cartKey, itemKey);
-		if (storedValue == null) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"购物车商品不存在");
-		}
+    public CartItem update(Long productId, CartItemUpdateRequest request) {
+        Long userId = currentUser.getUserId();
+        HashOperations<String, Object, Object> hashOperations =
+                stringRedisTemplate.opsForHash();
+        String cartKey = KEY_PREFIX + userId;
+        String itemKey = productId.toString();
+        Object storedValue = hashOperations.get(cartKey, itemKey);
+        if (storedValue == null) {
+            throw new BusinessException(
+                    ErrorCode.RESOURCE_NOT_FOUND,
+                    "购物车商品不存在");
+        }
 
-		CartItem item = CartItem.fromJson(storedValue.toString());
-		if (request.getQuantity() != null) {
-			item.setQuantity(request.getQuantity());
-		}
-		if (request.getSelected() != null) {
-			item.setSelected(request.getSelected());
-		}
+        CartItem item = CartItem.fromJson(storedValue.toString());
+        if (request.getQuantity() != null) {
+            item.setQuantity(request.getQuantity());
+        }
+        if (request.getSelected() != null) {
+            item.setSelected(request.getSelected());
+        }
 
-		hashOperations.put(cartKey, itemKey, item.toJson());
-		return item;
-	}
+        hashOperations.put(cartKey, itemKey, item.toJson());
+        return item;
+    }
 
-	public void delete(Long productId) {
-		Long userId = currentUser.getUserId();
-		String cartKey = KEY_PREFIX + userId;
-		String itemKey = productId.toString();
-		Long deletedCount = stringRedisTemplate.opsForHash()
-				.delete(cartKey, itemKey);
-		if (deletedCount == null || deletedCount == 0) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"购物车商品不存在");
-		}
-	}
+    public void delete(Long productId) {
+        Long userId = currentUser.getUserId();
+        String cartKey = KEY_PREFIX + userId;
+        String itemKey = productId.toString();
+        Long deletedCount = stringRedisTemplate.opsForHash()
+                .delete(cartKey, itemKey);
+        if (deletedCount == null || deletedCount == 0) {
+            throw new BusinessException(
+                    ErrorCode.RESOURCE_NOT_FOUND,
+                    "购物车商品不存在");
+        }
+    }
 
-	public void deleteItems(Long userId, List<Long> productIds) {
-		if (userId == null || productIds == null || productIds.isEmpty()) {
-			return;
-		}
+    @SentinelResource(
+            value = "internal-cart-clear-items",
+            blockHandler = "handleDeleteItemsBlocked")
+    public void deleteItems(Long userId, List<Long> productIds) {
+        if (userId == null || productIds == null || productIds.isEmpty()) {
+            return;
+        }
 
-		Object[] itemKeys = new Object[productIds.size()];
-		for (int i = 0; i < productIds.size(); i++) {
-			itemKeys[i] = productIds.get(i).toString();
-		}
-		stringRedisTemplate.opsForHash().delete(
-				KEY_PREFIX + userId,
-				itemKeys);
-	}
+        Object[] itemKeys = new Object[productIds.size()];
+        for (int i = 0; i < productIds.size(); i++) {
+            itemKeys[i] = productIds.get(i).toString();
+        }
+        stringRedisTemplate.opsForHash().delete(
+                KEY_PREFIX + userId,
+                itemKeys);
+    }
 
-	public List<CartItemResponse> listItems(Long userId) {
-		if (userId == null) {
-			return Collections.emptyList();
-		}
-		List<Object> storedValues = stringRedisTemplate.opsForHash()
-				.values(KEY_PREFIX + userId);
-		if (storedValues == null || storedValues.isEmpty()) {
-			return Collections.emptyList();
-		}
+    public void handleDeleteItemsBlocked(
+            Long userId,
+            List<Long> productIds,
+            com.alibaba.csp.sentinel.slots.block.BlockException exception) {
+        throw new BusinessException(
+                ErrorCode.TOO_MANY_REQUESTS,
+                "购物车清理触发限流保护");
+    }
 
-		List<CartItem> cartItems = new ArrayList<>();
-		Set<Long> productIds = new LinkedHashSet<>();
-		for (Object storedValue : storedValues) {
-			CartItem cartItem = CartItem.fromJson(storedValue.toString());
-			if (cartItem != null && cartItem.getProductId() != null) {
-				cartItems.add(cartItem);
-				productIds.add(cartItem.getProductId());
-			}
-		}
+    public List<CartItemResponse> listItems(Long userId) {
+        if (userId == null) {
+            return Collections.emptyList();
+        }
+        List<Object> storedValues = stringRedisTemplate.opsForHash()
+                .values(KEY_PREFIX + userId);
+        if (storedValues == null || storedValues.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-		Map<Long, ProductSummary> productsById = Collections.emptyMap();
-		boolean productUnavailable = false;
-		try {
-			productsById = productQueryService.getProductSummaries(productIds);
-		}
-		catch (ProductDependencyException exception) {
-			log.warn("Querying products for cart failed, degrading gracefully", exception);
-			productUnavailable = true;
-		}
+        List<CartItem> cartItems = new ArrayList<>();
+        Set<Long> productIds = new LinkedHashSet<>();
+        for (Object storedValue : storedValues) {
+            CartItem cartItem = CartItem.fromJson(storedValue.toString());
+            if (cartItem != null && cartItem.getProductId() != null) {
+                cartItems.add(cartItem);
+                productIds.add(cartItem.getProductId());
+            }
+        }
 
-		List<CartItemResponse> responses = new ArrayList<>();
-		for (CartItem cartItem : cartItems) {
-			if (productUnavailable) {
-				responses.add(new CartItemResponse(
-						cartItem.getProductId(),
-						null,
-						null,
-						null,
-						null,
-						null,
-						cartItem.getQuantity(),
-						cartItem.getSelected(),
-						false,
-						PRODUCT_SERVICE_UNAVAILABLE_REASON));
-			}
-			else {
-				ProductSummary product = productsById.get(cartItem.getProductId());
-				responses.add(toResponse(cartItem, product));
-			}
-		}
-		return responses;
-	}
+        Map<Long, ProductSummary> productsById = Collections.emptyMap();
+        boolean productUnavailable = false;
+        try {
+            productsById = productQueryService.getProductSummaries(productIds);
+        } catch (ProductDependencyException exception) {
+            log.warn("Querying products for cart failed, degrading gracefully", exception);
+            productUnavailable = true;
+        }
 
-	public CartResponse getCart() {
-		Long userId = currentUser.getUserId();
-		List<CartItemResponse> items = listItems(userId);
-		BigDecimal selectedAmount = BigDecimal.ZERO;
-		for (CartItemResponse item : items) {
-			if (Boolean.TRUE.equals(item.getValid())
-					&& Boolean.TRUE.equals(item.getSelected())
-					&& item.getPrice() != null) {
-				BigDecimal itemAmount = item.getPrice().multiply(
-						BigDecimal.valueOf(item.getQuantity()));
-				selectedAmount = selectedAmount.add(itemAmount);
-			}
-		}
-		return new CartResponse(items, selectedAmount);
-	}
+        List<CartItemResponse> responses = new ArrayList<>();
+        for (CartItem cartItem : cartItems) {
+            if (productUnavailable) {
+                responses.add(new CartItemResponse(
+                        cartItem.getProductId(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        cartItem.getQuantity(),
+                        cartItem.getSelected(),
+                        false,
+                        PRODUCT_SERVICE_UNAVAILABLE_REASON));
+            } else {
+                ProductSummary product = productsById.get(cartItem.getProductId());
+                responses.add(toResponse(cartItem, product));
+            }
+        }
+        return responses;
+    }
 
-	public List<CartItemResponse> getSelectedCartItems(Long userId) {
-		List<CartItemResponse> cartItems = listItems(userId);
-		List<CartItemResponse> selectedItems = new ArrayList<>();
-		for (CartItemResponse cartItem : cartItems) {
-			if (Boolean.TRUE.equals(cartItem.getSelected())) {
-				selectedItems.add(cartItem);
-			}
-		}
+    public CartResponse getCart() {
+        Long userId = currentUser.getUserId();
+        List<CartItemResponse> items = listItems(userId);
+        BigDecimal selectedAmount = BigDecimal.ZERO;
+        for (CartItemResponse item : items) {
+            if (Boolean.TRUE.equals(item.getValid())
+                    && Boolean.TRUE.equals(item.getSelected())
+                    && item.getPrice() != null) {
+                BigDecimal itemAmount = item.getPrice().multiply(
+                        BigDecimal.valueOf(item.getQuantity()));
+                selectedAmount = selectedAmount.add(itemAmount);
+            }
+        }
+        return new CartResponse(items, selectedAmount);
+    }
 
-		if (selectedItems.isEmpty()) {
-			throw new BusinessException(
-					ErrorCode.BUSINESS_CONFLICT,
-					"购物车中没有选中的商品");
-		}
-		return selectedItems;
-	}
+    @SentinelResource(
+            value = "internal-cart-get-selected-items",
+            blockHandler = "handleGetSelectedItemsBlocked")
+    public List<CartItemResponse> getSelectedCartItems(Long userId) {
+        List<CartItemResponse> cartItems = listItems(userId);
+        List<CartItemResponse> selectedItems = new ArrayList<>();
+        for (CartItemResponse cartItem : cartItems) {
+            if (Boolean.TRUE.equals(cartItem.getSelected())) {
+                selectedItems.add(cartItem);
+            }
+        }
 
-	private CartItemResponse toResponse(CartItem item, ProductSummary product) {
-		if (product == null) {
-			return new CartItemResponse(
-					item.getProductId(),
-					null,
-					null,
-					null,
-					null,
-					null,
-					item.getQuantity(),
-					item.getSelected(),
-					false,
-					PRODUCT_MISSING_REASON);
-		}
+        if (selectedItems.isEmpty()) {
+            throw new BusinessException(
+                    ErrorCode.BUSINESS_CONFLICT,
+                    "购物车中没有选中的商品");
+        }
+        return selectedItems;
+    }
 
-		String invalidReason = null;
-		if (!STATUS_ON_SALE.equals(product.status())) {
-			invalidReason = PRODUCT_OFF_SALE_REASON;
-		}
-		else if (product.stock() == null || product.stock() < item.getQuantity()) {
-			invalidReason = INSUFFICIENT_STOCK_REASON;
-		}
+    public List<CartItemResponse> handleGetSelectedItemsBlocked(
+            Long userId,
+            com.alibaba.csp.sentinel.slots.block.BlockException exception) {
+        throw new BusinessException(
+                ErrorCode.TOO_MANY_REQUESTS,
+                "购物车内部查询触发限流保护");
+    }
 
-		return new CartItemResponse(
-				product.id(),
-				product.name(),
-				product.imageUrl(),
-				product.price(),
-				product.stock(),
-				product.status(),
-				item.getQuantity(),
-				item.getSelected(),
-				invalidReason == null,
-				invalidReason);
-	}
+    private CartItemResponse toResponse(CartItem item, ProductSummary product) {
+        if (product == null) {
+            return new CartItemResponse(
+                    item.getProductId(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    item.getQuantity(),
+                    item.getSelected(),
+                    false,
+                    PRODUCT_MISSING_REASON);
+        }
+
+        String invalidReason = null;
+        if (!STATUS_ON_SALE.equals(product.status())) {
+            invalidReason = PRODUCT_OFF_SALE_REASON;
+        } else if (product.stock() == null || product.stock() < item.getQuantity()) {
+            invalidReason = INSUFFICIENT_STOCK_REASON;
+        }
+
+        return new CartItemResponse(
+                product.id(),
+                product.name(),
+                product.imageUrl(),
+                product.price(),
+                product.stock(),
+                product.status(),
+                item.getQuantity(),
+                item.getSelected(),
+                invalidReason == null,
+                invalidReason);
+    }
 }
