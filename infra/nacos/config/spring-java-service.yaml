@@ -17,3 +17,7 @@ app:
   legacy-controllers:
     account-enabled: false
     cart-enabled: false
+  product:
+    simulation:
+      delay-ms: 0
+      force-error: false

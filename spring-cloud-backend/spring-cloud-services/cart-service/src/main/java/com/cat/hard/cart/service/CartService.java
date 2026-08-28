@@ -52,6 +52,9 @@ public class CartService {
     @Resource
     private CurrentUser currentUser;
 
+    @Resource
+    private com.cat.hard.cart.internal.config.InternalCartSimulationProperties simulationProperties;
+
     public CartItem add(CartItemAddRequest request) {
         Long userId = currentUser.getUserId();
         Long productId = request.getProductId();
@@ -135,6 +138,7 @@ public class CartService {
             value = "internal-cart-clear-items",
             blockHandler = "handleDeleteItemsBlocked")
     public void deleteItems(Long userId, List<Long> productIds) {
+        simulateFault();
         if (userId == null || productIds == null || productIds.isEmpty()) {
             return;
         }
@@ -228,6 +232,7 @@ public class CartService {
             value = "internal-cart-get-selected-items",
             blockHandler = "handleGetSelectedItemsBlocked")
     public List<CartItemResponse> getSelectedCartItems(Long userId) {
+        simulateFault();
         List<CartItemResponse> cartItems = listItems(userId);
         List<CartItemResponse> selectedItems = new ArrayList<>();
         for (CartItemResponse cartItem : cartItems) {
@@ -249,7 +254,24 @@ public class CartService {
             com.alibaba.csp.sentinel.slots.block.BlockException exception) {
         throw new BusinessException(
                 ErrorCode.TOO_MANY_REQUESTS,
-                "购物车内部查询触发限流保护");
+                "购物车内部查询触发限流保护：" + exception.getClass().getSimpleName());
+    }
+
+    private void simulateFault() {
+        if (simulationProperties != null) {
+            if (simulationProperties.isForceError()) {
+                throw new IllegalStateException("P4 simulated cart-service failure");
+            }
+            long delayMs = simulationProperties.getDelayMs();
+            if (delayMs > 0) {
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Cart simulation interrupted", exception);
+                }
+            }
+        }
     }
 
     private CartItemResponse toResponse(CartItem item, ProductSummary product) {

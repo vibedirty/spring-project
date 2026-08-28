@@ -7,3 +7,9 @@ info:
   p4:
     config-source: nacos
     service-role: cart-service
+
+app:
+  cart:
+    simulation:
+      delay-ms: 0
+      force-error: false

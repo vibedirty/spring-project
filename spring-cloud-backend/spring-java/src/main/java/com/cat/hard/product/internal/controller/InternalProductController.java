@@ -23,9 +23,13 @@ public class InternalProductController {
 	@Resource
 	private ProductMapper productMapper;
 
+	@Resource
+	private com.cat.hard.product.internal.config.InternalProductSimulationProperties simulationProperties;
+
 	@GetMapping("/batch-summary")
 	public ApiResponse<List<ProductSummary>> getBatchSummary(
 			@RequestParam(value = "ids", required = false) List<Long> ids) {
+		simulateFault();
 		if (ids == null || ids.isEmpty()) {
 			return ApiResponse.success(Collections.emptyList());
 		}
@@ -43,7 +47,25 @@ public class InternalProductController {
 
 	@GetMapping("/{id}/summary")
 	public ApiResponse<ProductSummary> getSummary(@PathVariable Long id) {
+		simulateFault();
 		Product product = productMapper.selectById(id);
 		return ApiResponse.success(ProductSummary.from(product));
+	}
+
+	private void simulateFault() {
+		if (simulationProperties != null) {
+			if (simulationProperties.isForceError()) {
+				throw new IllegalStateException("P4 simulated product-service failure");
+			}
+			long delayMs = simulationProperties.getDelayMs();
+			if (delayMs > 0) {
+				try {
+					Thread.sleep(delayMs);
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Product simulation interrupted", exception);
+				}
+			}
+		}
 	}
 }
