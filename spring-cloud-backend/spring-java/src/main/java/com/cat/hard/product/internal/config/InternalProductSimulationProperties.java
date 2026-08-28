@@ -1,7 +1,11 @@
 package com.cat.hard.product.internal.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.stereotype.Component;
 
+@Component
+@RefreshScope
 @ConfigurationProperties(prefix = "app.product.simulation")
 public class InternalProductSimulationProperties {
 

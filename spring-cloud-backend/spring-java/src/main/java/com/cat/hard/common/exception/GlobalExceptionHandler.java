@@ -61,6 +61,28 @@ public class GlobalExceptionHandler {
 		return failure(ErrorCode.PARAMETER_ERROR, ErrorCode.PARAMETER_ERROR.getMessage());
 	}
 
+	@ExceptionHandler(com.cat.hard.integration.account.exception.AccountDependencyException.class)
+	public ResponseEntity<ApiResponse<Void>> handleAccountDependencyException(
+			com.cat.hard.integration.account.exception.AccountDependencyException exception) {
+		ErrorCode errorCode = switch (exception.getFailureType()) {
+			case RATE_LIMITED -> ErrorCode.TOO_MANY_REQUESTS;
+			case CIRCUIT_OPEN -> ErrorCode.SERVICE_UNAVAILABLE;
+			default -> ErrorCode.SERVICE_UNAVAILABLE;
+		};
+		return failure(errorCode, exception.getMessage());
+	}
+
+	@ExceptionHandler(com.cat.hard.integration.cart.exception.CartDependencyException.class)
+	public ResponseEntity<ApiResponse<Void>> handleCartDependencyException(
+			com.cat.hard.integration.cart.exception.CartDependencyException exception) {
+		ErrorCode errorCode = switch (exception.getFailureType()) {
+			case RATE_LIMITED -> ErrorCode.TOO_MANY_REQUESTS;
+			case CIRCUIT_OPEN -> ErrorCode.SERVICE_UNAVAILABLE;
+			default -> ErrorCode.SERVICE_UNAVAILABLE;
+		};
+		return failure(errorCode, exception.getMessage());
+	}
+
 	/**
 	 * 处理 Service 等业务代码主动抛出的业务异常。
 	 * 响应会保留异常中携带的业务错误码和具体提示。

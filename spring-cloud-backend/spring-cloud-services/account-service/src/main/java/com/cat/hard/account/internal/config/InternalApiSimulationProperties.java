@@ -1,7 +1,11 @@
 package com.cat.hard.account.internal.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.stereotype.Component;
 
+@Component
+@RefreshScope
 @ConfigurationProperties(prefix = "app.p3.simulation")
 public class InternalApiSimulationProperties {
 
