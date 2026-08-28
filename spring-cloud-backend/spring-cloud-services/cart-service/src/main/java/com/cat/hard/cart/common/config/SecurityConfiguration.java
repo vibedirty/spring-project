@@ -58,6 +58,7 @@ public class SecurityConfiguration {
 						.accessDeniedHandler(accessDeniedHandler))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers(OPEN_API_PATHS).permitAll()
+						.requestMatchers("/internal/**").permitAll()
 						.requestMatchers(HttpMethod.GET, PUBLIC_HEALTH_PATHS).permitAll()
 						.requestMatchers("/api/cart", "/api/cart/**").hasRole("USER")
 						.anyRequest().authenticated())

@@ -89,6 +89,7 @@ public class SecurityConfiguration {
 						.accessDeniedHandler(accessDeniedHandler))//角色不符处理器
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers(OPEN_API_PATHS).permitAll()
+						.requestMatchers("/internal/**").permitAll()
 						.requestMatchers(HttpMethod.GET, PUBLIC_HEALTH_PATHS).permitAll()
 						.requestMatchers(HttpMethod.POST, PUBLIC_AUTH_PATHS).permitAll()
 						.requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()

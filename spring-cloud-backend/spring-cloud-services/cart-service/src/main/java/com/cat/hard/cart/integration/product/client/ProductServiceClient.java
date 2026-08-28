@@ -2,6 +2,7 @@ package com.cat.hard.cart.integration.product.client;
 
 import java.util.List;
 
+import com.cat.hard.cart.integration.product.config.ProductFeignConfiguration;
 import com.cat.hard.cart.integration.product.dto.ProductApiResponse;
 import com.cat.hard.cart.integration.product.dto.ProductSummary;
 
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(
 		name = "spring-java-service",
 		contextId = "productServiceClient",
+		configuration = ProductFeignConfiguration.class,
 		fallbackFactory = ProductServiceClientFallbackFactory.class)
 public interface ProductServiceClient {
 
