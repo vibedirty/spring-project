@@ -1,0 +1,15 @@
+management:
+  info:
+    env:
+      enabled: true
+
+info:
+  p5:
+    config-source: nacos
+    service-role: product-service
+
+app:
+  product:
+    simulation:
+      delay-ms: 0
+      force-error: false

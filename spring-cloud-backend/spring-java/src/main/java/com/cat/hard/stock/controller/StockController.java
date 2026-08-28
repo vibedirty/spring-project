@@ -9,6 +9,7 @@ import com.cat.hard.stock.entity.StockLog;
 import com.cat.hard.stock.service.StockService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -16,6 +17,11 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin/stock")
+@ConditionalOnProperty(
+		prefix = "app.legacy-controllers",
+		name = "product-enabled",
+		havingValue = "true",
+		matchIfMissing = false)
 public class StockController {
 
     @Resource

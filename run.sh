@@ -10,6 +10,7 @@ ms_services=(
   "account-service|8101|spring-cloud-backend/spring-cloud-services/account-service/target/account-service-0.0.1-SNAPSHOT.jar"
   "spring-java-service|8081|spring-cloud-backend/spring-java/target/hard-0.0.1-SNAPSHOT.jar"
   "cart-service|8102|spring-cloud-backend/spring-cloud-services/cart-service/target/cart-service-0.0.1-SNAPSHOT.jar"
+  "product-service|8103|spring-cloud-backend/spring-cloud-services/product-service/target/product-service-0.0.1-SNAPSHOT.jar"
   "gateway-service|9000|spring-cloud-backend/spring-cloud-services/gateway-service/target/gateway-service-0.0.1-SNAPSHOT.jar"
 )
 

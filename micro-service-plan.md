@@ -543,7 +543,9 @@ GET /internal/users/{userId}/addresses/{addressId}
 
 - 重复清理购物车不会产生错误副作用。
 
-### P5：Product Service
+### P5：Product Service（已完成）
+
+> 完成状态（2026-08-28）：已实现。`product-service` 独立微服务（端口 8103，注册于 Nacos）创建完成；分类、商品、库存及相关缓存（Redis Key 所有权）已完整迁移；单体与 Cart 均通过 Feign 远程调用；提供批量商品查询与报价接口；落地生产级三态（`PROCESSING`/`SUCCESS`/`FAILED`）幂等库存流水表 `stock_operation_log`，具备原子锁占位、参数指纹冲突拦截与恢复前置成功校验；Gateway 路由已全面切换至 `lb://product-service`。
 
 #### 目标
 

@@ -19,6 +19,8 @@ import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.integration.account.service.AccountQueryService;
+import com.cat.hard.integration.product.client.ProductServiceClient;
+import com.cat.hard.integration.product.dto.ProductApiResponse;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -80,6 +82,9 @@ class OrderPaymentServiceTests {
 	@MockitoBean
 	private AccountQueryService accountQueryService;
 
+	@MockitoBean
+	private ProductServiceClient productServiceClient;
+
 	private Long userId;
 	private Long categoryId;
 	private Product product;
@@ -87,6 +92,13 @@ class OrderPaymentServiceTests {
 
 	@BeforeEach
 	void createOrderData() {
+		org.mockito.Mockito.when(productServiceClient.deductForOrder(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		org.mockito.Mockito.when(productServiceClient.restoreForOrder(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		org.mockito.Mockito.when(productServiceClient.increaseSales(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+
 		long unique = System.nanoTime();
 		User user = new User();
 		user.setUsername("payment" + unique);
@@ -228,8 +240,8 @@ class OrderPaymentServiceTests {
 				.isEqualTo(OrderStatus.CANCELLED);
 		assertThat(orderMapper.selectById(order.getId()).getCancelledAt())
 				.isNotNull();
-		assertThat(productMapper.selectById(product.getId()).getStock())
-				.isEqualTo(4);
+		org.mockito.Mockito.verify(productServiceClient, org.mockito.Mockito.times(1)).restoreForOrder(
+				org.mockito.ArgumentMatchers.argThat(r -> r.getOrderNo().equals(order.getOrderNo())));
 		assertThat(orderOperateLogs())
 				.singleElement()
 				.satisfies(operateLog -> {

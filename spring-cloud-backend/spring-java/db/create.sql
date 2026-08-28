@@ -115,6 +115,24 @@ CREATE TABLE IF NOT EXISTS `stock_log` (
   COLLATE = utf8mb4_unicode_ci
   COMMENT = '库存变动日志表';
 
+-- 创建stock_operation_log表（库存操作幂等流水表）
+CREATE TABLE IF NOT EXISTS `stock_operation_log` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+    `order_no` VARCHAR(64) NOT NULL COMMENT '业务订单号',
+    `operation_type` VARCHAR(32) NOT NULL COMMENT '操作类型：DEDUCT-扣减，RESTORE-恢复',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'PROCESSING' COMMENT '状态：PROCESSING-处理中，SUCCESS-成功，FAILED-失败',
+    `detail` TEXT NULL COMMENT '操作详情快照（JSON 格式）',
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+    `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+        ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_order_no_operation` (`order_no`, `operation_type`),
+    KEY `idx_stock_op_created_at` (`created_at`)
+) ENGINE = InnoDB
+  DEFAULT CHARACTER SET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci
+  COMMENT = '库存操作幂等流水表';
+
 -- 创建user_address表
 CREATE TABLE IF NOT EXISTS `user_address` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '地址 ID',

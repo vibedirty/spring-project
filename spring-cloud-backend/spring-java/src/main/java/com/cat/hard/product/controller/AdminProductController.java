@@ -19,6 +19,7 @@ import com.cat.hard.stock.service.StockService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,6 +30,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 @RestController
 @RequestMapping("/api/admin/products")
+@ConditionalOnProperty(
+		prefix = "app.legacy-controllers",
+		name = "product-enabled",
+		havingValue = "true",
+		matchIfMissing = false)
 public class AdminProductController {
 
 	@Resource

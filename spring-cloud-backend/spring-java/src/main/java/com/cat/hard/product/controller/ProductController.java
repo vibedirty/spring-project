@@ -14,6 +14,7 @@ import com.cat.hard.product.service.ProductService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,6 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/products")
+@ConditionalOnProperty(
+		prefix = "app.legacy-controllers",
+		name = "product-enabled",
+		havingValue = "true",
+		matchIfMissing = false)
 public class ProductController {
 
 	@Resource

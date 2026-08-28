@@ -39,8 +39,8 @@ import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.order.model.OrderAmountResult;
 import com.cat.hard.order.model.OrderIdempotencyLock;
+import com.cat.hard.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.product.enums.ProductStatus;
-import com.cat.hard.stock.service.StockService;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -86,7 +86,7 @@ class OrderServiceTests {
 	private OrderOperateLogMapper orderOperateLogMapper;
 
 	@Mock
-	private StockService stockService;
+	private ProductStockIntegrationService productStockIntegrationService;
 
 	@Mock
 	private OrderIdempotencyService orderIdempotencyService;
@@ -396,7 +396,7 @@ class OrderServiceTests {
 			verify(orderMapper).insert(order);
 			verify(orderItemMapper).insert(anyList());
 			verify(orderAddressMapper).insert(any(OrderAddress.class));
-			verify(stockService).decreaseForOrder(
+			verify(productStockIntegrationService).decreaseForOrder(
 					eq("ORD202608240002"),
 					anyList());
 			verify(orderOperateLogMapper).insert(any(OrderOperateLog.class));
@@ -459,7 +459,7 @@ class OrderServiceTests {
 		BusinessException stockError = new BusinessException(
 				ErrorCode.BUSINESS_CONFLICT,
 				"商品库存不足");
-		doThrow(stockError).when(stockService)
+		doThrow(stockError).when(productStockIntegrationService)
 				.decreaseForOrder(eq("ORD202608240003"), anyList());
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setAddressId(30001L);

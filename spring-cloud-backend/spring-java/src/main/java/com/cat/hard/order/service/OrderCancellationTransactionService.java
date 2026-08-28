@@ -9,6 +9,7 @@ import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
 import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -19,7 +20,6 @@ import com.cat.hard.order.mapper.OrderItemMapper;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.stock.model.StockRestorationItem;
-import com.cat.hard.stock.service.StockService;
 
 import jakarta.annotation.Resource;
 
@@ -40,7 +40,7 @@ public class OrderCancellationTransactionService {
     private OrderItemMapper orderItemMapper;
 
     @Resource
-    private StockService stockService;
+    private ProductStockIntegrationService productStockIntegrationService;
 
     @Resource
     private OrderOperateLogMapper orderOperateLogMapper;
@@ -170,7 +170,7 @@ public class OrderCancellationTransactionService {
                     orderItem.getProductName(),
                     orderItem.getQuantity()));
         }
-        stockService.restoreForOrder(order.getOrderNo(), restorationItems);
+        productStockIntegrationService.restoreForOrder(order.getOrderNo(), restorationItems);
     }
 
     private void createUserCancellationLog(Order order, UserSummary userSummary) {

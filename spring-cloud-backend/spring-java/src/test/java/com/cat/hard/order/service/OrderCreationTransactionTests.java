@@ -23,6 +23,8 @@ import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.integration.account.dto.AddressSnapshot;
 import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.integration.account.service.AccountQueryService;
+import com.cat.hard.integration.product.client.ProductServiceClient;
+import com.cat.hard.integration.product.dto.ProductApiResponse;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.product.entity.Product;
@@ -73,6 +75,9 @@ class OrderCreationTransactionTests {
 	@MockitoBean
 	private AccountQueryService accountQueryService;
 
+	@MockitoBean
+	private ProductServiceClient productServiceClient;
+
 	private Long userId;
 	private Long addressId;
 	private Long categoryId;
@@ -82,6 +87,12 @@ class OrderCreationTransactionTests {
 
 	@BeforeEach
 	void createOrderData() {
+		when(productServiceClient.deductForOrder(any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		when(productServiceClient.restoreForOrder(any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		when(productServiceClient.increaseSales(any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
 		String uniqueSuffix = Long.toString(System.nanoTime());
 
 		User user = new User();
@@ -183,6 +194,9 @@ class OrderCreationTransactionTests {
 
 	@Test
 	void shouldRollbackAllDatabaseChangesWhenAnyStepFails() {
+		when(productServiceClient.deductForOrder(any()))
+				.thenReturn(new ProductApiResponse<>(409, "商品“第二个事务商品”（ID：" + secondProductId + "）：库存不足或已不可售", null));
+
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setAddressId(addressId);
 

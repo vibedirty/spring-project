@@ -20,6 +20,8 @@ import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.integration.account.service.AccountQueryService;
+import com.cat.hard.integration.product.client.ProductServiceClient;
+import com.cat.hard.integration.product.dto.ProductApiResponse;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -89,6 +91,9 @@ class OrderCancellationServiceTests {
 	@MockitoBean
 	private AccountQueryService accountQueryService;
 
+	@MockitoBean
+	private ProductServiceClient productServiceClient;
+
 	private Long userId;
 	private Long categoryId;
 	private Product firstProduct;
@@ -97,6 +102,13 @@ class OrderCancellationServiceTests {
 
 	@BeforeEach
 	void createOrderData() {
+		org.mockito.Mockito.when(productServiceClient.deductForOrder(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		org.mockito.Mockito.when(productServiceClient.restoreForOrder(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+		org.mockito.Mockito.when(productServiceClient.increaseSales(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(200, "success", null));
+
 		long unique = System.nanoTime();
 		User user = new User();
 		user.setUsername("cancel" + unique);
@@ -179,9 +191,8 @@ class OrderCancellationServiceTests {
 		Order cancelledOrder = orderMapper.selectById(order.getId());
 		assertThat(cancelledOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(cancelledOrder.getCancelledAt()).isNotNull();
-		assertThat(stockOf(firstProduct)).isEqualTo(5);
-		assertThat(stockOf(secondProduct)).isEqualTo(2);
-		assertThat(stockLogs()).hasSize(2);
+		org.mockito.Mockito.verify(productServiceClient, org.mockito.Mockito.times(1)).restoreForOrder(
+				org.mockito.ArgumentMatchers.argThat(r -> r.getOrderNo().equals(order.getOrderNo()) && r.getItems().size() == 2));
 		List<OrderOperateLog> operateLogs = orderOperateLogs();
 		assertThat(operateLogs).hasSize(1);
 		OrderOperateLog operateLog = operateLogs.get(0);
@@ -216,9 +227,8 @@ class OrderCancellationServiceTests {
 		Order cancelledOrder = orderMapper.selectById(order.getId());
 		assertThat(cancelledOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(cancelledOrder.getCancelledAt()).isNotNull();
-		assertThat(stockOf(firstProduct)).isEqualTo(5);
-		assertThat(stockOf(secondProduct)).isEqualTo(2);
-		assertThat(stockLogs()).hasSize(2);
+		org.mockito.Mockito.verify(productServiceClient, org.mockito.Mockito.times(1)).restoreForOrder(
+				org.mockito.ArgumentMatchers.argThat(r -> r.getOrderNo().equals(order.getOrderNo()) && r.getItems().size() == 2));
 
 		List<OrderOperateLog> operateLogs = orderOperateLogs();
 		assertThat(operateLogs).hasSize(1);
@@ -280,9 +290,8 @@ class OrderCancellationServiceTests {
 
 		assertThat(orderMapper.selectById(order.getId()).getStatus())
 				.isEqualTo(OrderStatus.CANCELLED);
-		assertThat(stockOf(firstProduct)).isEqualTo(5);
-		assertThat(stockOf(secondProduct)).isEqualTo(2);
-		assertThat(stockLogs()).hasSize(2);
+		org.mockito.Mockito.verify(productServiceClient, org.mockito.Mockito.times(1)).restoreForOrder(
+				org.mockito.ArgumentMatchers.argThat(r -> r.getOrderNo().equals(order.getOrderNo()) && r.getItems().size() == 2));
 		assertThat(orderOperateLogs()).hasSize(1);
 	}
 
@@ -326,6 +335,8 @@ class OrderCancellationServiceTests {
 
 	@Test
 	void shouldRollbackStatusAndStockWhenRestorationFails() {
+		org.mockito.Mockito.when(productServiceClient.restoreForOrder(org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new ProductApiResponse<>(409, "恢复库存后超出允许范围", null));
 		secondProduct.setStock(Integer.MAX_VALUE);
 		productMapper.updateById(secondProduct);
 

@@ -32,6 +32,7 @@ import com.cat.hard.order.enums.OrderStatus;
 import com.cat.hard.order.generator.OrderNumberGenerator;
 import com.cat.hard.order.mapper.OrderAddressMapper;
 import com.cat.hard.order.mapper.OrderItemMapper;
+import com.cat.hard.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.order.model.OrderAmountResult;
@@ -39,7 +40,6 @@ import com.cat.hard.order.model.OrderIdempotencyLock;
 import com.cat.hard.order.model.OrderItemAmount;
 import com.cat.hard.product.enums.ProductStatus;
 import com.cat.hard.stock.model.StockDeductionItem;
-import com.cat.hard.stock.service.StockService;
 
 import jakarta.annotation.Resource;
 
@@ -83,7 +83,7 @@ public class OrderService {
 	private OrderOperateLogMapper orderOperateLogMapper;
 
 	@Resource
-	private StockService stockService;
+	private ProductStockIntegrationService productStockIntegrationService;
 
 	@Resource
 	private OrderIdempotencyService orderIdempotencyService;
@@ -150,7 +150,7 @@ public class OrderService {
 					item.getProductName(),
 					item.getQuantity()));
 		}
-		stockService.decreaseForOrder(order.getOrderNo(), deductionItems);
+		productStockIntegrationService.decreaseForOrder(order.getOrderNo(), deductionItems);
 		createOrderCreateLog(order, userSummary);
 		registerOrderCreatedLogAfterCommit(order);
 		registerOrderTimeoutAfterCommit(order);

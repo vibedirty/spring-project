@@ -8,6 +8,8 @@ import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
 import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.product.dto.ProductSalesUpdateRequest;
+import com.cat.hard.integration.product.service.ProductStockIntegrationService;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -17,8 +19,6 @@ import com.cat.hard.order.enums.OrderStatus;
 import com.cat.hard.order.mapper.OrderItemMapper;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
-import com.cat.hard.product.entity.Product;
-import com.cat.hard.product.mapper.ProductMapper;
 
 import jakarta.annotation.Resource;
 
@@ -49,7 +49,7 @@ public class OrderPaymentTransactionService {
 	private OrderBusinessLogService orderBusinessLogService;
 
 	@Resource
-	private ProductMapper productMapper;
+	private ProductStockIntegrationService productStockIntegrationService;
 
 	@Resource
 	private OrderItemMapper orderItemMapper;
@@ -94,24 +94,15 @@ public class OrderPaymentTransactionService {
 		return false;
 	}
 
-	private void updateSales(String orderNo, Long orderId){
-        List<OrderItem> orderItems = orderItemMapper.selectByOrderId(orderId);
-		if(orderItems.isEmpty()){
+	private void updateSales(String orderNo, Long orderId) {
+		List<OrderItem> orderItems = orderItemMapper.selectByOrderId(orderId);
+		if (orderItems.isEmpty()) {
 			throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "查询不到订单明细，无法更改销量");
 		}
-	for (OrderItem item : orderItems){
-		LambdaUpdateWrapper<Product> updateWrapper = new LambdaUpdateWrapper<>(Product.class);
-		updateWrapper.eq(Product::getId, item.getProductId())
-				.setIncrBy(Product::getSales, item.getQuantity());
-		int rows = productMapper.update(updateWrapper);
-		if (rows == 0) {
-			log.warn("更新商品销量失败，需人工对账补偿：orderNo={}, orderId={}, productId={}, quantity={}",
-					orderNo,
-					item.getOrderId(),
-					item.getProductId(),
-					item.getQuantity());
-		}
-	}
+		List<ProductSalesUpdateRequest.SalesItem> salesItems = orderItems.stream()
+				.map(item -> new ProductSalesUpdateRequest.SalesItem(item.getProductId(), item.getQuantity()))
+				.toList();
+		productStockIntegrationService.increaseSales(orderNo, salesItems);
 	}
 
 	private void validateNotExpired(Order order, LocalDateTime paymentTime) {

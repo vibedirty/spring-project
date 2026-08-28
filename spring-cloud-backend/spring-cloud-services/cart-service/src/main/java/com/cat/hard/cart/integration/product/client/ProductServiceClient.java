@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(
-		name = "spring-java-service",
+		name = "${app.feign.product-service.name:product-service}",
 		contextId = "productServiceClient",
 		configuration = ProductFeignConfiguration.class,
 		fallbackFactory = ProductServiceClientFallbackFactory.class)

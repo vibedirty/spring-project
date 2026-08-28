@@ -19,5 +19,6 @@
 		<module>account-service</module>
 		<module>cart-service</module>
 		<module>gateway-service</module>
+		<module>product-service</module>
 	</modules>
 </project>

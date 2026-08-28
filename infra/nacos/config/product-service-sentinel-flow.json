@@ -1,0 +1,26 @@
+[
+  {
+    "resource": "stock:deductForOrder",
+    "grade": 1,
+    "count": 50,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "stock:restoreForOrder",
+    "grade": 1,
+    "count": 50,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "stock:queryResult",
+    "grade": 1,
+    "count": 100,
+    "limitApp": "default",
+    "strategy": 0,
+    "controlBehavior": 0
+  }
+]

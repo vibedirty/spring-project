@@ -77,6 +77,49 @@ spring:
               metadata:
                 connect-timeout: 2000
                 response-timeout: 5000
+            - id: product-public-api
+              uri: "${PRODUCT_UPSTREAM_URI:lb://product-service}"
+              predicates:
+                - Path=/api/products,/api/products/**,/api/categories,/api/categories/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: product-admin-api
+              uri: "${PRODUCT_UPSTREAM_URI:lb://product-service}"
+              predicates:
+                - Path=/api/admin/products,/api/admin/products/**,/api/admin/categories,/api/admin/categories/**,/api/admin/stock,/api/admin/stock/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: product-health
+              uri: "${PRODUCT_UPSTREAM_URI:lb://product-service}"
+              predicates:
+                - Path=/management/product-service/actuator/health,/management/product-service/actuator/health/**
+              filters:
+                - StripPrefix=2
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 5000
             - id: spring-java-api
               uri: "${GATEWAY_UPSTREAM_URI:lb://spring-java-service}"
               predicates:
