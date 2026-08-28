@@ -19,6 +19,9 @@ import com.cat.hard.category.entity.Category;
 import com.cat.hard.category.mapper.CategoryMapper;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
+import com.cat.hard.integration.account.dto.AddressSnapshot;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.product.entity.Product;
@@ -66,6 +69,9 @@ class OrderCreationTransactionTests {
 	@MockitoBean
 	private CurrentUser currentUser;
 
+	@MockitoBean
+	private AccountQueryService accountQueryService;
+
 	private Long userId;
 	private Long addressId;
 	private Long categoryId;
@@ -108,6 +114,23 @@ class OrderCreationTransactionTests {
 		secondProductId = secondProduct.getId();
 
 		when(currentUser.getUserId()).thenReturn(userId);
+		when(accountQueryService.getAddressSnapshot(userId, addressId))
+				.thenReturn(new AddressSnapshot(
+						addressId,
+						userId,
+						"张三",
+						"13800138000",
+						"广东省",
+						"深圳市",
+						"南山区",
+						"科技园1号"));
+		when(accountQueryService.getUserSummary(userId))
+				.thenReturn(new UserSummary(
+						userId,
+						user.getUsername(),
+						user.getNickname(),
+						"USER",
+						"ENABLED"));
 		when(cartService.listItems()).thenReturn(List.of(
 				cartItem(firstProduct, 2, 5),
 				cartItem(secondProduct, 2, 2)));

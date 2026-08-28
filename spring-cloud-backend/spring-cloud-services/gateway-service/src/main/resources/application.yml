@@ -10,6 +10,21 @@ spring:
     import:
       - optional:nacos:gateway-service.yaml?group=SERVICE_GROUP&refreshEnabled=true
   cloud:
+    sentinel:
+      eager: true
+      log:
+        dir: ${SENTINEL_LOG_DIR:/tmp/hard-sentinel/gateway-service}
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD_ADDR:127.0.0.1:8858}
+      datasource:
+        gateway-flow-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: gateway-service-sentinel-gateway-flow.json
+            data-type: json
+            rule-type: gw-flow
     nacos:
       config:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}

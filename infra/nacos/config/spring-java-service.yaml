@@ -7,6 +7,9 @@ info:
   p1:
     config-source: nacos
     service-role: modular-monolith
+  p3:
+    account-query: openfeign-load-balanced
+    governance: sentinel-nacos
 
 app:
   legacy-controllers:

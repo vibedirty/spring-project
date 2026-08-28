@@ -10,6 +10,8 @@ import java.util.List;
 import com.cat.hard.auth.jwt.JwtUserClaims;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.enums.OrderOperation;
 import com.cat.hard.order.enums.OrderOperatorType;
@@ -27,6 +29,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest
 @Transactional
@@ -37,6 +40,9 @@ class OrderReceiptServiceTests {
 
 	@Resource
 	private OrderReceiptService orderReceiptService;
+
+	@MockitoBean
+	private AccountQueryService accountQueryService;
 
 	@BeforeEach
 	void setUp() {
@@ -113,6 +119,13 @@ class OrderReceiptServiceTests {
 				     '2026-08-25 18:10:00', '2026-08-25 17:30:00', '2026-08-25 18:10:00')
 				""");
 		setCurrentUser(7L);
+		org.mockito.Mockito.when(accountQueryService.getUserSummary(7L))
+				.thenReturn(new UserSummary(
+						7L,
+						"receipt-user",
+						"收货测试用户",
+						"USER",
+						"ENABLED"));
 	}
 
 	@AfterEach

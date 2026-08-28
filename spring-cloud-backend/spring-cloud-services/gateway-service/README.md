@@ -1,6 +1,6 @@
-# P1 Gateway + Nacos
+# P1/P3 Gateway + Nacos + Sentinel
 
-`gateway-service` 是两个前端的统一 API 入口。默认将 `/api/**` 通过 Nacos 服务发现和 Spring Cloud LoadBalancer 转发到 `spring-java-service`，自身不连接 MySQL，也不承载业务 Service。
+`gateway-service` 是两个前端的统一 API 入口。它通过 Nacos 与 Spring Cloud LoadBalancer 路由请求，自身不连接 MySQL，也不承载业务 Service。P3 增加 Sentinel Gateway Adapter：按路由 ID 执行 QPS 规则，被拦截时返回 HTTP 429 和统一 JSON。
 
 ## 前置条件
 
@@ -40,7 +40,7 @@ SERVER_PORT=9000 SERVICE_IP=127.0.0.1 \
   "$JAVA_HOME/bin/java" -jar spring-cloud-backend/spring-cloud-services/gateway-service/target/gateway-service-0.0.1-SNAPSHOT.jar
 ```
 
-如果 `8080` 没有被其他进程使用，也可以让其中一个原单体使用默认端口。微服务应用均直接运行在宿主机 JVM，只有 Nacos 运行在 Docker 中。
+如果 `8080` 没有被其他进程使用，也可以让其中一个原单体使用默认端口。Java 服务直接运行在宿主机 JVM；Nacos 与 Sentinel Dashboard 运行在 Docker 中。Dashboard 地址为 `http://127.0.0.1:8858`。
 
 主要环境变量：
 

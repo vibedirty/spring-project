@@ -22,6 +22,20 @@ services:
       - nacos-data:/home/nacos/data
       - nacos-logs:/home/nacos/logs
 
+  sentinel-dashboard:
+    build:
+      context: ../sentinel
+      args:
+        SENTINEL_VERSION: ${SENTINEL_VERSION:-1.8.8}
+    container_name: hard-sentinel-dashboard
+    environment:
+      JAVA_OPTS: >-
+        -Dserver.port=8858
+        -Dcsp.sentinel.dashboard.server=localhost:8858
+        -Dproject.name=sentinel-dashboard
+    ports:
+      - "127.0.0.1:8858:8858"
+
 volumes:
   nacos-data:
   nacos-logs:

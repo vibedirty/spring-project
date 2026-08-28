@@ -12,6 +12,8 @@ import com.cat.hard.auth.jwt.JwtUserClaims;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.dto.AdminOrderDetailResponse;
 import com.cat.hard.order.dto.AdminOrderPageRequest;
 import com.cat.hard.order.dto.OrderShipmentRequest;
@@ -36,6 +38,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest
 @Transactional
@@ -53,6 +56,9 @@ class AdminOrderServiceTests {
 	@Resource
 	private UserMapper userMapper;
 
+	@MockitoBean
+	private AccountQueryService accountQueryService;
+
 	private Long adminId;
 
 	@BeforeEach
@@ -65,6 +71,13 @@ class AdminOrderServiceTests {
 		userMapper.insert(admin);
 		adminId = admin.getId();
 		setCurrentAdmin(adminId);
+		org.mockito.Mockito.when(accountQueryService.getUserSummary(adminId))
+				.thenReturn(new UserSummary(
+						adminId,
+						admin.getUsername(),
+						admin.getNickname(),
+						"ADMIN",
+						"ENABLED"));
 
 		jdbcTemplate.execute("DROP TEMPORARY TABLE IF EXISTS orders");
 		jdbcTemplate.execute("DROP TEMPORARY TABLE IF EXISTS order_item");

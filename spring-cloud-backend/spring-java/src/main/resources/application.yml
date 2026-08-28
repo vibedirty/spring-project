@@ -10,6 +10,38 @@ spring:
     import:
       - optional:nacos:spring-java-service.yaml?group=SERVICE_GROUP&refreshEnabled=true
   cloud:
+    openfeign:
+      sentinel:
+        enabled: true
+      client:
+        config:
+          account-service:
+            connect-timeout: 2000
+            read-timeout: 3000
+            logger-level: basic
+    sentinel:
+      eager: true
+      log:
+        dir: ${SENTINEL_LOG_DIR:/tmp/hard-sentinel/spring-java}
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD_ADDR:127.0.0.1:8858}
+      datasource:
+        flow-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: spring-java-service-sentinel-flow.json
+            data-type: json
+            rule-type: flow
+        degrade-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: spring-java-service-sentinel-degrade.json
+            data-type: json
+            rule-type: degrade
     nacos:
       config:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}

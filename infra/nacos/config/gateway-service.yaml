@@ -14,7 +14,7 @@ spring:
                 - name: Retry
                   args:
                     retries: 1
-                    methods: GET,POST
+                    methods: GET
                     exceptions:
                       - java.net.ConnectException
               metadata:
@@ -28,7 +28,7 @@ spring:
                 - name: Retry
                   args:
                     retries: 1
-                    methods: GET,POST
+                    methods: GET
                     exceptions:
                       - java.net.ConnectException
               metadata:
@@ -100,3 +100,5 @@ info:
   p1:
     config-source: nacos
     route-mode: load-balanced-dynamic-refresh
+  p3:
+    governance: sentinel-nacos

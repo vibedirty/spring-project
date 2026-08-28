@@ -4,6 +4,8 @@ import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.util.TextUtils;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.entity.Order;
 
 import jakarta.annotation.Resource;
@@ -22,6 +24,9 @@ public class OrderReceiptService {
 	@Resource
 	private OrderReceiptTransactionService transactionService;
 
+	@Resource
+	private AccountQueryService accountQueryService;
+
 	public Order confirmReceipt(String orderNo) {
 		String trimmedOrderNo = TextUtils.trimToNull(orderNo);
 		if (trimmedOrderNo == null) {
@@ -29,9 +34,13 @@ public class OrderReceiptService {
 		}
 
 		Long userId = currentUser.getUserId();
+		UserSummary userSummary = accountQueryService.getUserSummary(userId);
 		return orderLockService.executeWithStatusLock(
 				trimmedOrderNo,
-				() -> transactionService.confirmReceipt(trimmedOrderNo, userId));
+				() -> transactionService.confirmReceipt(
+						trimmedOrderNo,
+						userId,
+						userSummary));
 	}
 
 	private BusinessException orderNotFound() {

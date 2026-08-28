@@ -27,6 +27,7 @@
 		<maven.compiler.release>${java.version}</maven.compiler.release>
 		<spring-cloud.version>2025.1.0</spring-cloud.version>
 		<spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
+		<sentinel.version>1.8.9</sentinel.version>
 	</properties>
 
 	<dependencyManagement>

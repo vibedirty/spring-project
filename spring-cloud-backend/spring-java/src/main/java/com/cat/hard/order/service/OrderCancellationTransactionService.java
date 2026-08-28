@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
+import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -19,8 +20,6 @@ import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.stock.model.StockRestorationItem;
 import com.cat.hard.stock.service.StockService;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import jakarta.annotation.Resource;
 
@@ -47,9 +46,6 @@ public class OrderCancellationTransactionService {
     private OrderOperateLogMapper orderOperateLogMapper;
 
     @Resource
-    private UserMapper userMapper;
-
-    @Resource
     private OrderTimeoutRedisService orderTimeoutRedisService;
 
     @Resource
@@ -59,7 +55,7 @@ public class OrderCancellationTransactionService {
     private OrderBusinessLogService orderBusinessLogService;
 
     @Transactional
-    public boolean cancel(String orderNo, Long userId) {
+    public boolean cancel(String orderNo, Long userId, UserSummary userSummary) {
         Order order = getRequiredOwnedOrder(orderNo, userId);
         if (order.getStatus() == OrderStatus.CANCELLED) {
             return false;
@@ -88,7 +84,7 @@ public class OrderCancellationTransactionService {
                     "订单状态已发生变化，请重试");
         }
 
-        completeCancellation(order, false);
+        completeCancellation(order, false, userSummary);
         return true;
     }
 
@@ -113,7 +109,7 @@ public class OrderCancellationTransactionService {
             return false;
         }
 
-        completeCancellation(order, true);
+        completeCancellation(order, true, null);
         return true;
     }
 
@@ -135,12 +131,15 @@ public class OrderCancellationTransactionService {
         return orderMapper.update(null, updateWrapper) == 1;
     }
 
-    private void completeCancellation(Order order, boolean automatic) {
+    private void completeCancellation(
+            Order order,
+            boolean automatic,
+            UserSummary userSummary) {
         restoreStockByOrderItemsInternal(order);
         if (automatic) {
             createSystemCancellationLog(order);
         } else {
-            createUserCancellationLog(order);
+            createUserCancellationLog(order, userSummary);
         }
         registerCancellationLogAfterCommit(order, automatic);
         registerRemoveOrderTimeout(order);
@@ -174,19 +173,12 @@ public class OrderCancellationTransactionService {
         stockService.restoreForOrder(order.getOrderNo(), restorationItems);
     }
 
-    private void createUserCancellationLog(Order order) {
-        User user = userMapper.selectById(order.getUserId());
-        if (user == null) {
-            throw new BusinessException(
-                    ErrorCode.RESOURCE_NOT_FOUND,
-                    "订单用户不存在，无法记录取消日志");
-        }
-
+    private void createUserCancellationLog(Order order, UserSummary userSummary) {
         OrderOperateLog operateLog = new OrderOperateLog();
         operateLog.setOrderId(order.getId());
         operateLog.setOperatorType(OrderOperatorType.USER);
         operateLog.setOperatorId(order.getUserId());
-        operateLog.setOperatorName(user.getNickname());
+        operateLog.setOperatorName(userSummary.nickname());
         operateLog.setOperation(OrderOperation.CANCEL);
         operateLog.setFromStatus(OrderStatus.PENDING_PAYMENT);
         operateLog.setToStatus(OrderStatus.CANCELLED);

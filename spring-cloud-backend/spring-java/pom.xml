@@ -61,6 +61,23 @@
 			<groupId>com.alibaba.cloud</groupId>
 			<artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
 		</dependency>
+		<!-- P3: 通过服务名调用 account-service，并由 Sentinel 提供限流和熔断 -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-openfeign</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-loadbalancer</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.alibaba.cloud</groupId>
+			<artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.alibaba.csp</groupId>
+			<artifactId>sentinel-datasource-nacos</artifactId>
+		</dependency>
 
 		<!-- 005: MySQL、MyBatis-Plus 和 Redis -->
 		<!-- 提供适配 Spring Boot 4 的 MyBatis-Plus 数据访问能力 -->

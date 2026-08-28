@@ -14,14 +14,15 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import com.cat.hard.address.entity.UserAddress;
-import com.cat.hard.address.service.AddressService;
 import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.cart.dto.CartItemResponse;
 import com.cat.hard.cart.service.CartService;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
+import com.cat.hard.integration.account.dto.AddressSnapshot;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.calculator.OrderAmountCalculator;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.entity.Order;
@@ -40,8 +41,6 @@ import com.cat.hard.order.model.OrderAmountResult;
 import com.cat.hard.order.model.OrderIdempotencyLock;
 import com.cat.hard.product.enums.ProductStatus;
 import com.cat.hard.stock.service.StockService;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,13 +77,10 @@ class OrderServiceTests {
 	private OrderItemMapper orderItemMapper;
 
 	@Mock
-	private AddressService addressService;
-
-	@Mock
 	private OrderAddressMapper orderAddressMapper;
 
 	@Mock
-	private UserMapper userMapper;
+	private AccountQueryService accountQueryService;
 
 	@Mock
 	private OrderOperateLogMapper orderOperateLogMapper;
@@ -320,16 +316,9 @@ class OrderServiceTests {
 
 	@Test
 	void shouldCreateOrderAddressSnapshot() {
-		UserAddress sourceAddress = new UserAddress();
-		sourceAddress.setId(30001L);
-		sourceAddress.setUserId(7L);
-		sourceAddress.setReceiverName("张三");
-		sourceAddress.setPhone("13800138000");
-		sourceAddress.setProvince("广东省");
-		sourceAddress.setCity("深圳市");
-		sourceAddress.setDistrict("南山区");
-		sourceAddress.setDetailAddress("科技园1号");
-		when(addressService.getOwnedAddress(30001L)).thenReturn(sourceAddress);
+		when(currentUser.getUserId()).thenReturn(7L);
+		when(accountQueryService.getAddressSnapshot(7L, 30001L))
+				.thenReturn(addressSnapshot());
 
 		OrderAddress orderAddress = orderService.createOrderAddress(100L, 30001L);
 
@@ -349,7 +338,9 @@ class OrderServiceTests {
 		BusinessException addressNotFound = new BusinessException(
 				ErrorCode.RESOURCE_NOT_FOUND,
 				"地址不存在");
-		when(addressService.getOwnedAddress(30001L)).thenThrow(addressNotFound);
+		when(currentUser.getUserId()).thenReturn(7L);
+		when(accountQueryService.getAddressSnapshot(7L, 30001L))
+				.thenThrow(addressNotFound);
 
 		assertThatThrownBy(() -> orderService.createOrderAddress(100L, 30001L))
 				.isSameAs(addressNotFound);
@@ -362,10 +353,7 @@ class OrderServiceTests {
 		order.setId(100L);
 		order.setUserId(7L);
 		order.setStatus(OrderStatus.PENDING_PAYMENT);
-		User user = new User();
-		user.setId(7L);
-		user.setNickname("测试用户");
-		when(userMapper.selectById(7L)).thenReturn(user);
+		when(accountQueryService.getUserSummary(7L)).thenReturn(userSummary());
 
 		OrderOperateLog operateLog = orderService.createOrderCreateLog(order);
 
@@ -395,19 +383,9 @@ class OrderServiceTests {
 			insertedOrder.setId(100L);
 			return 1;
 		});
-		UserAddress sourceAddress = new UserAddress();
-		sourceAddress.setId(30001L);
-		sourceAddress.setReceiverName("张三");
-		sourceAddress.setPhone("13800138000");
-		sourceAddress.setProvince("广东省");
-		sourceAddress.setCity("深圳市");
-		sourceAddress.setDistrict("南山区");
-		sourceAddress.setDetailAddress("科技园1号");
-		when(addressService.getOwnedAddress(30001L)).thenReturn(sourceAddress);
-		User user = new User();
-		user.setId(7L);
-		user.setNickname("测试用户");
-		when(userMapper.selectById(7L)).thenReturn(user);
+		when(accountQueryService.getAddressSnapshot(7L, 30001L))
+				.thenReturn(addressSnapshot());
+		when(accountQueryService.getUserSummary(7L)).thenReturn(userSummary());
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setAddressId(30001L);
 
@@ -447,9 +425,13 @@ class OrderServiceTests {
 			InOrder preparationOrder = org.mockito.Mockito.inOrder(
 					orderIdempotencyService,
 					cartService,
+					accountQueryService,
 					transactionTemplate);
 			preparationOrder.verify(orderIdempotencyService).acquire(7L, null);
 			preparationOrder.verify(cartService).listItems();
+			preparationOrder.verify(accountQueryService)
+					.getAddressSnapshot(7L, 30001L);
+			preparationOrder.verify(accountQueryService).getUserSummary(7L);
 			preparationOrder.verify(transactionTemplate).execute(any());
 		}
 		finally {
@@ -474,15 +456,9 @@ class OrderServiceTests {
 			insertedOrder.setId(101L);
 			return 1;
 		});
-		UserAddress sourceAddress = new UserAddress();
-		sourceAddress.setId(30001L);
-		sourceAddress.setReceiverName("张三");
-		sourceAddress.setPhone("13800138000");
-		sourceAddress.setProvince("广东省");
-		sourceAddress.setCity("深圳市");
-		sourceAddress.setDistrict("南山区");
-		sourceAddress.setDetailAddress("科技园1号");
-		when(addressService.getOwnedAddress(30001L)).thenReturn(sourceAddress);
+		when(accountQueryService.getAddressSnapshot(7L, 30001L))
+				.thenReturn(addressSnapshot());
+		when(accountQueryService.getUserSummary(7L)).thenReturn(userSummary());
 		BusinessException stockError = new BusinessException(
 				ErrorCode.BUSINESS_CONFLICT,
 				"商品库存不足");
@@ -533,6 +509,27 @@ class OrderServiceTests {
 			TransactionCallback<?> callback = invocation.getArgument(0);
 			return callback.doInTransaction(null);
 		});
+	}
+
+	private AddressSnapshot addressSnapshot() {
+		return new AddressSnapshot(
+				30001L,
+				7L,
+				"张三",
+				"13800138000",
+				"广东省",
+				"深圳市",
+				"南山区",
+				"科技园1号");
+	}
+
+	private UserSummary userSummary() {
+		return new UserSummary(
+				7L,
+				"test-user",
+				"测试用户",
+				"USER",
+				"ENABLED");
 	}
 
 	private void assertNoSelectedItemError() {

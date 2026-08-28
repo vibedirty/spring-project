@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
+import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderOperateLog;
 import com.cat.hard.order.enums.OrderOperation;
@@ -12,8 +13,6 @@ import com.cat.hard.order.enums.OrderOperatorType;
 import com.cat.hard.order.enums.OrderStatus;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import jakarta.annotation.Resource;
 
@@ -29,11 +28,11 @@ public class OrderReceiptTransactionService {
 	@Resource
 	private OrderOperateLogMapper operateLogMapper;
 
-	@Resource
-	private UserMapper userMapper;
-
 	@Transactional
-	public Order confirmReceipt(String orderNo, Long userId) {
+	public Order confirmReceipt(
+			String orderNo,
+			Long userId,
+			UserSummary userSummary) {
 		LocalDateTime completedAt = LocalDateTime.now();
 		LambdaUpdateWrapper<Order> updateWrapper =
 				new LambdaUpdateWrapper<Order>(Order.class);
@@ -59,7 +58,7 @@ public class OrderReceiptTransactionService {
 		}
 
 		Order order = orderMapper.selectByOrderNoAndUserId(orderNo, userId);
-		recordLog(order, userId);
+		recordLog(order, userId, userSummary);
 		return order;
 	}
 
@@ -69,19 +68,12 @@ public class OrderReceiptTransactionService {
 				"订单不存在");
 	}
 
-	private void recordLog(Order order, Long userId) {
-		User user = userMapper.selectById(userId);
-		if (user == null) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"用户不存在，无法完成记录");
-		}
-
+	private void recordLog(Order order, Long userId, UserSummary userSummary) {
 		OrderOperateLog operateLog = new OrderOperateLog();
 		operateLog.setOrderId(order.getId());
 		operateLog.setOperatorType(OrderOperatorType.USER);
 		operateLog.setOperatorId(userId);
-		operateLog.setOperatorName(user.getNickname());
+		operateLog.setOperatorName(userSummary.nickname());
 		operateLog.setOperation(OrderOperation.CONFIRM_RECEIPT);
 		operateLog.setFromStatus(OrderStatus.SHIPPED);
 		operateLog.setToStatus(OrderStatus.COMPLETED);

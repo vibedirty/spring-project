@@ -1,4 +1,4 @@
-# P0/P1 Nacos 本地环境
+# P0-P3 Nacos 与 Sentinel 本地环境
 
 P0 只将 Nacos 运行在 Docker 中。Gateway、原单体和后续业务服务均直接运行在 macOS 宿主机 JVM，不构建 Docker 镜像。
 
@@ -7,6 +7,7 @@ P0 只将 Nacos 运行在 Docker 中。Gateway、原单体和后续业务服务�
 | 项目 | 地址或版本 |
 | --- | --- |
 | Nacos Server | `nacos/nacos-server:v3.1.1` |
+| Sentinel Dashboard | `http://127.0.0.1:8858`（1.8.9） |
 | Client/API | `127.0.0.1:8848` |
 | Console | `http://127.0.0.1:8849` |
 | gRPC | `127.0.0.1:9848` |
@@ -22,6 +23,7 @@ P0 只将 Nacos 运行在 Docker 中。Gateway、原单体和后续业务服务�
 docker compose -f infra/nacos/compose.yaml up -d
 docker compose -f infra/nacos/compose.yaml ps
 docker compose -f infra/nacos/compose.yaml logs -f nacos
+docker compose -f infra/nacos/compose.yaml logs -f sentinel-dashboard
 ```
 
 日志出现 Nacos 启动成功信息后，打开 `http://127.0.0.1:8849`。Nacos 3 首次进入控制台时，按页面提示初始化管理员密码。
@@ -49,6 +51,8 @@ sh infra/nacos/bootstrap.sh
 - `COMMON_GROUP/common.yaml`：P0 基线标记；
 - `SERVICE_GROUP/gateway-service.yaml`：P1 Gateway 路由、超时和 CORS；
 - `SERVICE_GROUP/spring-java-service.yaml`：P1 原单体服务配置。
+- `SERVICE_GROUP/account-service.yaml`：P2/P3 账户服务配置和故障模拟开关；
+- `SENTINEL_GROUP/*-sentinel-*.json`：P3 Gateway、Feign 和账户内部接口治理规则。
 
 配置源文件保存在 `infra/nacos/config/`，应先修改版本库中的源文件，再重新执行脚本发布，避免 Nacos 控制台内容与代码库长期漂移。真实 `.env` 已被仓库根 `.gitignore` 忽略。
 
@@ -83,6 +87,7 @@ docker compose -f infra/nacos/compose.yaml down -v
 | 服务发现 Group | `HARD_GROUP` |
 | 公共配置 Group | `COMMON_GROUP` |
 | 服务配置 Group | `SERVICE_GROUP` |
+| Sentinel 规则 Group | `SENTINEL_GROUP` |
 | 本地 Cluster | `LOCAL` |
 
 Data ID 不重复携带环境名，环境由 Namespace 唯一表达：
@@ -98,6 +103,13 @@ SERVICE_GROUP
   cart-service.yaml
   product-service.yaml
   order-service.yaml
+
+SENTINEL_GROUP
+  gateway-service-sentinel-gateway-flow.json
+  spring-java-service-sentinel-flow.json
+  spring-java-service-sentinel-degrade.json
+  account-service-sentinel-flow.json
+  account-service-sentinel-degrade.json
 ```
 
 P0 定义并验证该模型；P1 已实现应用从 Nacos 导入配置、服务注册、动态 Gateway 路由和多实例负载均衡。

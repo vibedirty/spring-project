@@ -1,0 +1,16 @@
+[
+  {
+    "resource": "account-internal-user-summary",
+    "grade": 0,
+    "count": 30,
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "account-internal-address-snapshot",
+    "grade": 1,
+    "count": 80,
+    "strategy": 0,
+    "controlBehavior": 0
+  }
+]

@@ -18,6 +18,8 @@ import com.cat.hard.category.entity.Category;
 import com.cat.hard.category.mapper.CategoryMapper;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -46,6 +48,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest
 class OrderCancellationServiceTests {
@@ -83,6 +86,9 @@ class OrderCancellationServiceTests {
 	@Resource
 	private OrderTimeoutRedisService orderTimeoutRedisService;
 
+	@MockitoBean
+	private AccountQueryService accountQueryService;
+
 	private Long userId;
 	private Long categoryId;
 	private Product firstProduct;
@@ -99,6 +105,13 @@ class OrderCancellationServiceTests {
 		userMapper.insert(user);
 		userId = user.getId();
 		setCurrentUser(userId);
+		org.mockito.Mockito.when(accountQueryService.getUserSummary(userId))
+				.thenReturn(new UserSummary(
+						userId,
+						user.getUsername(),
+						user.getNickname(),
+						"USER",
+						"ENABLED"));
 
 		Category category = new Category();
 		category.setName("取消订单测试分类" + unique);

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
+import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.order.entity.Order;
 import com.cat.hard.order.entity.OrderItem;
 import com.cat.hard.order.entity.OrderOperateLog;
@@ -18,8 +19,6 @@ import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
 import com.cat.hard.product.entity.Product;
 import com.cat.hard.product.mapper.ProductMapper;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import jakarta.annotation.Resource;
 
@@ -41,9 +40,6 @@ public class OrderPaymentTransactionService {
 	private OrderOperateLogMapper orderOperateLogMapper;
 
 	@Resource
-	private UserMapper userMapper;
-
-	@Resource
 	private OrderTimeoutRedisService orderTimeoutRedisService;
 
 	@Resource
@@ -59,7 +55,7 @@ public class OrderPaymentTransactionService {
 	private OrderItemMapper orderItemMapper;
 
 	@Transactional
-	public boolean pay(String orderNo, Long userId) {
+	public boolean pay(String orderNo, Long userId, UserSummary userSummary) {
 		Order order = getRequiredOwnedOrder(orderNo, userId);
 		if (order.getStatus() == OrderStatus.PENDING_SHIPMENT
 				&& order.getPaidAt() != null) {
@@ -84,7 +80,7 @@ public class OrderPaymentTransactionService {
 				.set(Order::getPaidAt, paymentTime)
 				.set(Order::getUpdatedAt, paymentTime);
 		if (orderMapper.update(null, updateWrapper) == 1) {
-			createPaymentLog(order);
+			createPaymentLog(order, userSummary);
 			registerPaymentLogAfterCommit(orderNo, userId);
 			removeOrderTimeoutAfterCommit(orderNo);
 			updateSales(orderNo, order.getId());
@@ -147,19 +143,12 @@ public class OrderPaymentTransactionService {
 		}
 	}
 
-	private void createPaymentLog(Order order) {
-		User user = userMapper.selectById(order.getUserId());
-		if (user == null) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"订单用户不存在，无法记录支付日志");
-		}
-
+	private void createPaymentLog(Order order, UserSummary userSummary) {
 		OrderOperateLog operateLog = new OrderOperateLog();
 		operateLog.setOrderId(order.getId());
 		operateLog.setOperatorType(OrderOperatorType.USER);
 		operateLog.setOperatorId(order.getUserId());
-		operateLog.setOperatorName(user.getNickname());
+		operateLog.setOperatorName(userSummary.nickname());
 		operateLog.setOperation(OrderOperation.PAY);
 		operateLog.setFromStatus(OrderStatus.PENDING_PAYMENT);
 		operateLog.setToStatus(OrderStatus.PENDING_SHIPMENT);

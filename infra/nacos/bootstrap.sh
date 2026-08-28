@@ -85,6 +85,24 @@ publish_service_config() {
     printf '\n'
 }
 
+publish_sentinel_config() {
+    namespace_id=$1
+    data_id=$2
+    config_desc=$3
+    config_file="$SCRIPT_DIR/config/$data_id"
+
+    curl --fail --silent --show-error --request POST \
+        "$NACOS_BASE_URL/nacos/v3/admin/cs/config" \
+        --header "accessToken:$ACCESS_TOKEN" \
+        --data-urlencode "namespaceId=$namespace_id" \
+        --data-urlencode "groupName=SENTINEL_GROUP" \
+        --data-urlencode "dataId=$data_id" \
+        --data-urlencode "type=json" \
+        --data-urlencode "desc=$config_desc" \
+        --data-urlencode "content@$config_file"
+    printf '\n'
+}
+
 create_namespace hard-dev hard-dev "Local development namespace"
 create_namespace hard-test hard-test "Local test namespace"
 publish_baseline_config hard-dev
@@ -96,4 +114,12 @@ publish_service_config hard-test gateway-service.yaml "P1/P2 Gateway routes, COR
 publish_service_config hard-test spring-java-service.yaml "P1 modular monolith service configuration"
 publish_service_config hard-test account-service.yaml "P2 account service configuration"
 
-echo "Nacos P0/P1/P2 namespaces and configurations are ready."
+for namespace_id in hard-dev hard-test; do
+    publish_sentinel_config "$namespace_id" spring-java-service-sentinel-flow.json "P3 monolith Feign flow and concurrency rules"
+    publish_sentinel_config "$namespace_id" spring-java-service-sentinel-degrade.json "P3 monolith Feign circuit-breaker rules"
+    publish_sentinel_config "$namespace_id" account-service-sentinel-flow.json "P3 account internal API flow and concurrency rules"
+    publish_sentinel_config "$namespace_id" account-service-sentinel-degrade.json "P3 account internal API circuit-breaker rules"
+    publish_sentinel_config "$namespace_id" gateway-service-sentinel-gateway-flow.json "P3 Gateway route flow rules"
+done
+
+echo "Nacos P0/P1/P2/P3 namespaces, service configurations, and Sentinel rules are ready."

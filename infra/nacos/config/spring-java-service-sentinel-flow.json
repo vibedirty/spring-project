@@ -1,0 +1,16 @@
+[
+  {
+    "resource": "account-query-user-summary",
+    "grade": 0,
+    "count": 20,
+    "strategy": 0,
+    "controlBehavior": 0
+  },
+  {
+    "resource": "account-query-address-snapshot",
+    "grade": 1,
+    "count": 50,
+    "strategy": 0,
+    "controlBehavior": 0
+  }
+]

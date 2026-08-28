@@ -1,4 +1,4 @@
-# P2 Account Service
+# P2/P3 Account Service
 
 `account-service` 是从单体中抽离出的第一个业务微服务，负责用户认证（`auth`）、用户信息（`user`）与收货地址（`address`）。对外保持原有的公开 API 契约不变，前端通过 `gateway-service` 访问。
 
@@ -9,13 +9,15 @@
 - **跨服务 JWT**：与原单体共享对称秘钥及 Claims 定义（`userId`、`role`、`jti`、`iat`、`exp`），签发的 Token 可直接无缝用于后续服务（购物车、订单等）鉴权。
 - **原单体平滑过渡**：原单体通过 `@ConditionalOnProperty(prefix = "app.legacy-controllers", name = "account-enabled")` 配置已在微服务模式下关闭对外账户写 Controller，杜绝新旧双写。
 - **本地配置范围**：项目仅用于本地学习，`application-dev.yml` 中的数据库密码和固定 JWT Secret 是本地示例值，用于简化多服务联调，不得用于真实环境或发布到 Nacos。
+- **P3 内部契约**：提供 `GET /internal/users/{userId}/summary` 与 `GET /internal/users/{userId}/addresses/{addressId}`；返回 `UserSummary`、`AddressSnapshot`，不暴露 Entity。内部路径要求 JWT，且不经 Gateway 对外路由。
+- **故障实验**：Nacos 的 `app.p3.simulation.delay-ms` 和 `force-error` 可分别制造慢调用和异常，Sentinel 规则来自 `SENTINEL_GROUP`。
 
 ## 2. 前置条件
 
 - JDK 17；
 - Docker 中的 Nacos（`127.0.0.1:8848`）已启动；
 - 本机 MySQL（3306）、Redis（6379）已启动；
-- 已执行 `sh infra/nacos/bootstrap.sh` 发布 Nacos 配置（含 `account-service.yaml`、`gateway-service.yaml`、`spring-java-service.yaml`）。
+- 已执行 `sh infra/nacos/bootstrap.sh` 发布服务配置和 P3 Sentinel JSON 规则。
 
 构建所有后端模块：
 

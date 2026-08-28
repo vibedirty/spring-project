@@ -7,3 +7,9 @@ info:
   p2:
     config-source: nacos
     service-role: account-service
+
+app:
+  p3:
+    simulation:
+      delay-ms: 0
+      force-error: false

@@ -11,6 +11,8 @@ import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
 import com.cat.hard.common.util.TextUtils;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.dto.AdminOrderDetailResponse;
 import com.cat.hard.order.dto.AdminOrderPageRequest;
 import com.cat.hard.order.dto.OrderShipmentRequest;
@@ -25,8 +27,6 @@ import com.cat.hard.order.mapper.OrderAddressMapper;
 import com.cat.hard.order.mapper.OrderItemMapper;
 import com.cat.hard.order.mapper.OrderMapper;
 import com.cat.hard.order.mapper.OrderOperateLogMapper;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import jakarta.annotation.Resource;
 
@@ -52,7 +52,7 @@ public class AdminOrderService {
 	private CurrentUser currentUser;
 
 	@Resource
-	private UserMapper userMapper;
+	private AccountQueryService accountQueryService;
 
 	@Resource
 	private TransactionCallbackService transactionCallbackService;
@@ -167,18 +167,13 @@ public class AdminOrderService {
 
 	private void createShipmentLog(Order order) {
 		Long adminId = currentUser.getUserId();
-		User admin = userMapper.selectById(adminId);
-		if (admin == null) {
-			throw new BusinessException(
-					ErrorCode.RESOURCE_NOT_FOUND,
-					"管理员不存在，无法记录发货日志");
-		}
+		UserSummary admin = accountQueryService.getUserSummary(adminId);
 
 		OrderOperateLog operateLog = new OrderOperateLog();
 		operateLog.setOrderId(order.getId());
 		operateLog.setOperatorType(OrderOperatorType.ADMIN);
 		operateLog.setOperatorId(adminId);
-		operateLog.setOperatorName(admin.getNickname());
+		operateLog.setOperatorName(admin.nickname());
 		operateLog.setOperation(OrderOperation.SHIP);
 		operateLog.setFromStatus(OrderStatus.PENDING_SHIPMENT);
 		operateLog.setToStatus(OrderStatus.SHIPPED);

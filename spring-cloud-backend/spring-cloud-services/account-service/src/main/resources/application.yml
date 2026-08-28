@@ -10,6 +10,29 @@ spring:
     import:
       - optional:nacos:account-service.yaml?group=SERVICE_GROUP&refreshEnabled=true
   cloud:
+    sentinel:
+      eager: true
+      log:
+        dir: ${SENTINEL_LOG_DIR:/tmp/hard-sentinel/account-service}
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD_ADDR:127.0.0.1:8858}
+      datasource:
+        flow-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: account-service-sentinel-flow.json
+            data-type: json
+            rule-type: flow
+        degrade-rules:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+            namespace: ${NACOS_NAMESPACE:hard-dev}
+            group-id: SENTINEL_GROUP
+            data-id: account-service-sentinel-degrade.json
+            data-type: json
+            rule-type: degrade
     nacos:
       config:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -53,3 +76,9 @@ management:
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [requestId=%X{requestId:--}] %logger{36} - %msg%n"
+
+app:
+  p3:
+    simulation:
+      delay-ms: 0
+      force-error: false

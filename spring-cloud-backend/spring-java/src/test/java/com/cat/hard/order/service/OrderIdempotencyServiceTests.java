@@ -49,7 +49,7 @@ class OrderIdempotencyServiceTests {
 		when(valueOperations.setIfAbsent(
 				eq("order:idempotency:7:checkout-token"),
 				any(String.class),
-				eq(Duration.ofHours(24))))
+				eq(Duration.ofMinutes(5))))
 				.thenReturn(true);
 
 		OrderIdempotencyLock lock = orderIdempotencyService.acquire(

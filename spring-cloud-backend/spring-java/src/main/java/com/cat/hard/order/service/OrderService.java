@@ -8,14 +8,15 @@ import java.util.Map;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.cat.hard.address.entity.UserAddress;
-import com.cat.hard.address.service.AddressService;
 import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.cart.dto.CartItemResponse;
 import com.cat.hard.cart.service.CartService;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
+import com.cat.hard.integration.account.dto.AddressSnapshot;
+import com.cat.hard.integration.account.dto.UserSummary;
+import com.cat.hard.integration.account.service.AccountQueryService;
 import com.cat.hard.order.calculator.OrderAmountCalculator;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.dto.OrderDetailResponse;
@@ -39,8 +40,6 @@ import com.cat.hard.order.model.OrderItemAmount;
 import com.cat.hard.product.enums.ProductStatus;
 import com.cat.hard.stock.model.StockDeductionItem;
 import com.cat.hard.stock.service.StockService;
-import com.cat.hard.user.entity.User;
-import com.cat.hard.user.mapper.UserMapper;
 
 import jakarta.annotation.Resource;
 
@@ -75,13 +74,10 @@ public class OrderService {
 	private OrderItemMapper orderItemMapper;
 
 	@Resource
-	private AddressService addressService;
-
-	@Resource
 	private OrderAddressMapper orderAddressMapper;
 
 	@Resource
-	private UserMapper userMapper;
+	private AccountQueryService accountQueryService;
 
 	@Resource
 	private OrderOperateLogMapper orderOperateLogMapper;
@@ -118,10 +114,17 @@ public class OrderService {
 		try {
 			List<CartItemResponse> selectedItems = getValidatedSelectedCartItems();
 			OrderAmountResult amountResult = orderAmountCalculator.calculate(selectedItems);
+			Long userId = currentUser.getUserId();
+			AddressSnapshot addressSnapshot = accountQueryService.getAddressSnapshot(
+					userId,
+					request.getAddressId());
+			UserSummary userSummary = accountQueryService.getUserSummary(userId);
 			return transactionTemplate.execute(status -> createOrderInTransaction(
 					request,
 					selectedItems,
-					amountResult));
+					amountResult,
+					addressSnapshot,
+					userSummary));
 		}
 		catch (RuntimeException exception) {
 			releaseIdempotencyAfterFailure(idempotencyLock);
@@ -132,11 +135,13 @@ public class OrderService {
 	private Order createOrderInTransaction(
 			OrderCreateRequest request,
 			List<CartItemResponse> selectedItems,
-			OrderAmountResult amountResult) {
+			OrderAmountResult amountResult,
+			AddressSnapshot addressSnapshot,
+			UserSummary userSummary) {
 
 		Order order = createMainOrder(amountResult);
 		createOrderItems(order.getId(), selectedItems, amountResult);
-		createOrderAddress(order.getId(), request.getAddressId());
+		createOrderAddress(order.getId(), addressSnapshot);
 
 		List<StockDeductionItem> deductionItems = new ArrayList<>();
 		for (CartItemResponse item : selectedItems) {
@@ -146,7 +151,7 @@ public class OrderService {
 					item.getQuantity()));
 		}
 		stockService.decreaseForOrder(order.getOrderNo(), deductionItems);
-		createOrderCreateLog(order);
+		createOrderCreateLog(order, userSummary);
 		registerOrderCreatedLogAfterCommit(order);
 		registerOrderTimeoutAfterCommit(order);
 		clearPurchasedCartItemsAfterCommit(order.getOrderNo(), selectedItems);
@@ -204,9 +209,13 @@ public class OrderService {
 
 	public boolean cancelOrder(String orderNo) {
 		Long userId = currentUser.getUserId();
+		UserSummary userSummary = accountQueryService.getUserSummary(userId);
 		return orderLockService.executeWithStatusLock(
 				orderNo,
-				() -> orderCancellationTransactionService.cancel(orderNo, userId));
+				() -> orderCancellationTransactionService.cancel(
+						orderNo,
+						userId,
+						userSummary));
 	}
 
 	private List<OrderListResponse> buildOrderListResponses(List<Order> orders) {
@@ -387,34 +396,43 @@ public class OrderService {
 	}
 
 	public OrderAddress createOrderAddress(Long orderId, Long addressId) {
-		UserAddress sourceAddress = addressService.getOwnedAddress(addressId);
+		Long userId = currentUser.getUserId();
+		AddressSnapshot sourceAddress = accountQueryService.getAddressSnapshot(
+				userId,
+				addressId);
+		return createOrderAddress(orderId, sourceAddress);
+	}
 
+	private OrderAddress createOrderAddress(
+			Long orderId,
+			AddressSnapshot sourceAddress) {
 		OrderAddress orderAddress = new OrderAddress();
 		orderAddress.setOrderId(orderId);
-		orderAddress.setSourceAddressId(sourceAddress.getId());
-		orderAddress.setReceiverName(sourceAddress.getReceiverName());
-		orderAddress.setPhone(sourceAddress.getPhone());
-		orderAddress.setProvince(sourceAddress.getProvince());
-		orderAddress.setCity(sourceAddress.getCity());
-		orderAddress.setDistrict(sourceAddress.getDistrict());
-		orderAddress.setDetailAddress(sourceAddress.getDetailAddress());
+		orderAddress.setSourceAddressId(sourceAddress.addressId());
+		orderAddress.setReceiverName(sourceAddress.receiverName());
+		orderAddress.setPhone(sourceAddress.phone());
+		orderAddress.setProvince(sourceAddress.province());
+		orderAddress.setCity(sourceAddress.city());
+		orderAddress.setDistrict(sourceAddress.district());
+		orderAddress.setDetailAddress(sourceAddress.detailAddress());
 		orderAddressMapper.insert(orderAddress);
 		return orderAddress;
 	}
 
 	public OrderOperateLog createOrderCreateLog(Order order) {
-		User user = userMapper.selectById(order.getUserId());
-		if (user == null) {
-			throw new BusinessException(
-					ErrorCode.UNAUTHORIZED,
-					"当前用户不存在");
-		}
+		return createOrderCreateLog(
+				order,
+				accountQueryService.getUserSummary(order.getUserId()));
+	}
 
+	private OrderOperateLog createOrderCreateLog(
+			Order order,
+			UserSummary userSummary) {
 		OrderOperateLog operateLog = new OrderOperateLog();
 		operateLog.setOrderId(order.getId());
 		operateLog.setOperatorType(OrderOperatorType.USER);
 		operateLog.setOperatorId(order.getUserId());
-		operateLog.setOperatorName(user.getNickname());
+		operateLog.setOperatorName(userSummary.nickname());
 		operateLog.setOperation(OrderOperation.CREATE);
 		operateLog.setFromStatus(null);
 		operateLog.setToStatus(order.getStatus());

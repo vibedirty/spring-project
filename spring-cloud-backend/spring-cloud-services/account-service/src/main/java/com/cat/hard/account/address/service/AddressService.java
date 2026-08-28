@@ -78,6 +78,10 @@ public class AddressService {
 		return getOwnedAddress(id, currentUser.getUserId());
 	}
 
+	public UserAddress getOwnedAddressForUser(Long userId, Long id) {
+		return getOwnedAddress(id, userId);
+	}
+
 	@Transactional
 	public UserAddress update(Long id, AddressUpdateRequest request) {
 		Long userId = currentUser.getUserId();
