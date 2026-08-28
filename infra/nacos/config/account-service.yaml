@@ -1,0 +1,9 @@
+management:
+  info:
+    env:
+      enabled: true
+
+info:
+  p2:
+    config-source: nacos
+    service-role: account-service

@@ -68,10 +68,11 @@ SPRING_DATASOURCE_PASSWORD=hard-local-password \
 SPRING_DATA_REDIS_HOST=127.0.0.1 \
 SPRING_DATA_REDIS_PORT=6379 \
 APP_JWT_SECRET='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
+APP_LEGACY_CONTROLLERS_ACCOUNT_ENABLED=true \
 ./mvnw spring-boot:run
 ```
 
-应用默认监听 `8080` 端口。Windows 环境请使用 `mvnw.cmd`，并在启动前通过 PowerShell 或系统设置配置相同的环境变量。
+应用默认监听 `8080` 端口。上面的 `APP_LEGACY_CONTROLLERS_ACCOUNT_ENABLED=true` 仅用于独立运行原单体；通过 Gateway 运行 P2 微服务链路时必须保持为 `false`，避免原单体与 `account-service` 同时写账户数据。Windows 环境请使用 `mvnw.cmd`，并在启动前通过 PowerShell 或系统设置配置相同的环境变量。
 
 常用配置及对应环境变量：
 
@@ -83,9 +84,10 @@ APP_JWT_SECRET='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 | Redis 地址 | `SPRING_DATA_REDIS_HOST` | `127.0.0.1` |
 | Redis 端口 | `SPRING_DATA_REDIS_PORT` | `6379` |
 | JWT 密钥 | `APP_JWT_SECRET` | 至少 32 字节的随机字符串 |
+| 原单体账户接口 | `APP_LEGACY_CONTROLLERS_ACCOUNT_ENABLED` | 独立运行单体时为 `true`，P2 微服务模式为 `false` |
 | 应用端口 | `SERVER_PORT` | `8080` |
 
-示例密码和 JWT 密钥仅供本地开发使用，生产环境必须替换，且不要提交到代码仓库。
+本项目仅用于本地学习，表中的密码和 JWT 密钥都是为了简化联调而保留的本地示例值，不应复制到任何真实环境。
 
 ## 5. 验证启动结果
 

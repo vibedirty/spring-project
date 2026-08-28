@@ -6,6 +6,49 @@ spring:
           default-filters:
             - DedupeResponseHeader=X-Request-ID Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
           routes:
+            - id: account-auth-api
+              uri: "${ACCOUNT_UPSTREAM_URI:lb://account-service}"
+              predicates:
+                - Path=/api/auth/**,/api/admin/auth/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET,POST
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: account-address-api
+              uri: "${ACCOUNT_UPSTREAM_URI:lb://account-service}"
+              predicates:
+                - Path=/api/addresses,/api/addresses/**
+              filters:
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET,POST
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 10000
+            - id: account-health
+              uri: "${ACCOUNT_UPSTREAM_URI:lb://account-service}"
+              predicates:
+                - Path=/management/account-service/actuator/health,/management/account-service/actuator/health/**
+              filters:
+                - StripPrefix=2
+                - name: Retry
+                  args:
+                    retries: 1
+                    methods: GET
+                    exceptions:
+                      - java.net.ConnectException
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 5000
             - id: spring-java-api
               uri: "${GATEWAY_UPSTREAM_URI:lb://spring-java-service}"
               predicates:

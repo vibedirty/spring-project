@@ -16,6 +16,7 @@
 	<name>spring-cloud-services</name>
 
 	<modules>
+		<module>account-service</module>
 		<module>gateway-service</module>
 	</modules>
 </project>

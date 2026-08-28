@@ -13,6 +13,7 @@ import com.cat.hard.common.api.ApiResponse;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/addresses")
+@ConditionalOnProperty(
+		prefix = "app.legacy-controllers",
+		name = "account-enabled",
+		havingValue = "true",
+		matchIfMissing = false)
 public class AddressController {
 
 	@Resource
