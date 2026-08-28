@@ -162,6 +162,12 @@ public class CartService {
     }
 
     public List<CartItemResponse> listItems(Long userId) {
+		return listItems(userId, true);
+	}
+
+	private List<CartItemResponse> listItems(
+			Long userId,
+			boolean degradeProductFailure) {
         if (userId == null) {
             return Collections.emptyList();
         }
@@ -186,6 +192,9 @@ public class CartService {
         try {
             productsById = productQueryService.getProductSummaries(productIds);
         } catch (ProductDependencyException exception) {
+			if (!degradeProductFailure) {
+				throw exception;
+			}
             log.warn("Querying products for cart failed, degrading gracefully", exception);
             productUnavailable = true;
         }
@@ -233,7 +242,8 @@ public class CartService {
             blockHandler = "handleGetSelectedItemsBlocked")
     public List<CartItemResponse> getSelectedCartItems(Long userId) {
         simulateFault();
-        List<CartItemResponse> cartItems = listItems(userId);
+		// 下单链路不能把依赖故障伪装成“商品不存在”；让调用方收到 503/504 并重试。
+		List<CartItemResponse> cartItems = listItems(userId, false);
         List<CartItemResponse> selectedItems = new ArrayList<>();
         for (CartItemResponse cartItem : cartItems) {
             if (Boolean.TRUE.equals(cartItem.getSelected())) {

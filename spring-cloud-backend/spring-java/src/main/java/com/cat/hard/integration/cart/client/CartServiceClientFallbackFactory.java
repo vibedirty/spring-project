@@ -6,9 +6,9 @@ import java.util.concurrent.TimeoutException;
 
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
-import com.cat.hard.cart.dto.CartItemResponse;
 import com.cat.hard.integration.cart.dto.CartApiResponse;
 import com.cat.hard.integration.cart.dto.CartClearRequest;
+import com.cat.hard.integration.cart.dto.CartItemSnapshot;
 import com.cat.hard.integration.cart.exception.CartDependencyException;
 import com.cat.hard.integration.cart.exception.CartFailureType;
 
@@ -25,7 +25,7 @@ public class CartServiceClientFallbackFactory
 	public CartServiceClient create(Throwable cause) {
 		return new CartServiceClient() {
 			@Override
-			public CartApiResponse<List<CartItemResponse>> getSelectedCartItems(Long userId) {
+			public CartApiResponse<List<CartItemSnapshot>> getSelectedCartItems(Long userId) {
 				throw failure(cause);
 			}
 

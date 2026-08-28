@@ -62,6 +62,32 @@ class CartServiceTests {
 	}
 
 	@Test
+	void shouldReadLegacyCartJsonUsingAddedAtField() {
+		CartItem item = CartItem.fromJson("""
+				{"productId":"99","quantity":1,"selected":true,"addedAt":"2026-08-23T15:00:00"}
+				""");
+
+		assertThat(item.getProductId()).isEqualTo(99L);
+		assertThat(item.getQuantity()).isEqualTo(1);
+		assertThat(item.getSelected()).isTrue();
+		assertThat(item.getAddedAt())
+				.isEqualTo(LocalDateTime.of(2026, 8, 23, 15, 0));
+		assertThat(item.toJson()).contains("\"addedAt\"")
+				.doesNotContain("\"createdAt\"");
+	}
+
+	@Test
+	void shouldReadCartJsonWrittenBeforeP4CompatibilityFix() {
+		CartItem item = CartItem.fromJson("""
+				{"productId":99,"quantity":1,"selected":true,"createdAt":"2026-08-23T15:00:00"}
+				""");
+
+		assertThat(item.getProductId()).isEqualTo(99L);
+		assertThat(item.getAddedAt())
+				.isEqualTo(LocalDateTime.of(2026, 8, 23, 15, 0));
+	}
+
+	@Test
 	void shouldAddCartItemWhenProductIsOnSale() {
 		when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
 		when(productQueryService.getProductSummary(1L))
@@ -207,6 +233,22 @@ class CartServiceTests {
 		assertThat(resp.getValid()).isFalse();
 		assertThat(resp.getInvalidReason()).isEqualTo("商品服务暂时不可用");
 		// Redis 中的原始购物车结构完好无损，绝不删除
+		verify(hashOperations, never()).delete(anyString(), any(Object[].class));
+	}
+
+	@Test
+	void shouldPropagateProductFailureForOrderSelectedItemsQuery() {
+		when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+		CartItem item = new CartItem(1L, 2, true, LocalDateTime.now());
+		when(hashOperations.values("cart:100")).thenReturn(List.of(item.toJson()));
+		ProductDependencyException timeout = new ProductDependencyException(
+				ProductFailureType.TIMEOUT,
+				"商品服务超时");
+		when(productQueryService.getProductSummaries(Set.of(1L)))
+				.thenThrow(timeout);
+
+		assertThatThrownBy(() -> cartService.getSelectedCartItems(100L))
+				.isSameAs(timeout);
 		verify(hashOperations, never()).delete(anyString(), any(Object[].class));
 	}
 }

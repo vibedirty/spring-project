@@ -14,6 +14,9 @@ import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.integration.cart.client.CartServiceClient;
 import com.cat.hard.integration.cart.dto.CartApiResponse;
 import com.cat.hard.integration.cart.dto.CartClearRequest;
+import com.cat.hard.integration.cart.dto.CartItemSnapshot;
+import com.cat.hard.integration.cart.exception.CartDependencyException;
+import com.cat.hard.integration.cart.exception.CartFailureType;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,13 +35,13 @@ class CartQueryServiceTests {
 
 	@Test
 	void shouldGetSelectedCartItemsSuccessfully() {
-		CartItemResponse item = new CartItemResponse(
+		CartItemSnapshot item = new CartItemSnapshot(
 				1L,
 				"测试商品",
 				"img.png",
 				java.math.BigDecimal.TEN,
 				100,
-				com.cat.hard.product.enums.ProductStatus.ON_SALE,
+				"ON_SALE",
 				2,
 				true,
 				true,
@@ -51,6 +54,30 @@ class CartQueryServiceTests {
 
 		assertThat(responses).hasSize(1);
 		assertThat(responses.get(0).getProductId()).isEqualTo(1L);
+		assertThat(responses.get(0).getProductStatus())
+				.isEqualTo(com.cat.hard.product.enums.ProductStatus.ON_SALE);
+		assertThat(responses.get(0).getImageUrl()).isEqualTo("img.png");
+	}
+
+	@Test
+	void shouldRejectUnknownRemoteProductStatusInsteadOfTreatingItAsDeleted() {
+		CartItemSnapshot item = new CartItemSnapshot(
+				99L,
+				"洛丽塔",
+				null,
+				java.math.BigDecimal.valueOf(788),
+				8,
+				"UNKNOWN",
+				1,
+				true,
+				true,
+				null);
+		when(cartServiceClient.getSelectedCartItems(2L))
+				.thenReturn(new CartApiResponse<>(200, "成功", List.of(item)));
+
+		assertThatThrownBy(() -> cartQueryService.getSelectedCartItems(2L))
+				.isInstanceOf(CartDependencyException.class)
+				.hasMessageContaining("未知商品状态");
 	}
 
 	@Test
@@ -62,6 +89,18 @@ class CartQueryServiceTests {
 				.isInstanceOfSatisfying(BusinessException.class, ex -> {
 					assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BUSINESS_CONFLICT);
 					assertThat(ex.getMessage()).isEqualTo("购物车中没有选中的商品");
+				});
+	}
+
+	@Test
+	void shouldPreserveProductTimeoutAsDependencyFailure() {
+		when(cartServiceClient.getSelectedCartItems(100L))
+				.thenReturn(new CartApiResponse<>(504, "商品服务调用超时", null));
+
+		assertThatThrownBy(() -> cartQueryService.getSelectedCartItems(100L))
+				.isInstanceOfSatisfying(CartDependencyException.class, exception -> {
+					assertThat(exception.getFailureType()).isEqualTo(CartFailureType.TIMEOUT);
+					assertThat(exception.getMessage()).isEqualTo("商品服务调用超时");
 				});
 	}
 

@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 		prefix = "app.legacy-controllers",
 		name = "cart-enabled",
 		havingValue = "true",
-		matchIfMissing = true)
+		matchIfMissing = false)
 public class CartController {
 
 	@Resource

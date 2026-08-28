@@ -2,9 +2,9 @@ package com.cat.hard.integration.cart.client;
 
 import java.util.List;
 
-import com.cat.hard.cart.dto.CartItemResponse;
 import com.cat.hard.integration.cart.dto.CartApiResponse;
 import com.cat.hard.integration.cart.dto.CartClearRequest;
+import com.cat.hard.integration.cart.dto.CartItemSnapshot;
 
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public interface CartServiceClient {
 
 	@GetMapping("/internal/cart/selected-items")
-	CartApiResponse<List<CartItemResponse>> getSelectedCartItems(
+	CartApiResponse<List<CartItemSnapshot>> getSelectedCartItems(
 			@RequestParam("userId") Long userId);
 
 	@PostMapping("/internal/cart/clear-items")

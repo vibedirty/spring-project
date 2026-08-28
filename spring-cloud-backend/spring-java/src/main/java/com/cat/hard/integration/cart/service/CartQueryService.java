@@ -13,8 +13,10 @@ import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.integration.cart.client.CartServiceClient;
 import com.cat.hard.integration.cart.dto.CartApiResponse;
 import com.cat.hard.integration.cart.dto.CartClearRequest;
+import com.cat.hard.integration.cart.dto.CartItemSnapshot;
 import com.cat.hard.integration.cart.exception.CartDependencyException;
 import com.cat.hard.integration.cart.exception.CartFailureType;
+import com.cat.hard.product.enums.ProductStatus;
 
 import jakarta.annotation.Resource;
 
@@ -33,7 +35,12 @@ public class CartQueryService {
 		if (userId == null) {
 			return Collections.emptyList();
 		}
-		return requireSuccess(cartServiceClient.getSelectedCartItems(userId));
+		List<CartItemSnapshot> snapshots = requireSuccess(
+				cartServiceClient.getSelectedCartItems(userId));
+		if (snapshots == null) {
+			return Collections.emptyList();
+		}
+		return snapshots.stream().map(this::toOrderCartItem).toList();
 	}
 
 	@SentinelResource(
@@ -83,9 +90,49 @@ public class CartQueryService {
 					CartFailureType.RATE_LIMITED,
 					response.message());
 		}
+		if (response.code() == 504) {
+			throw new CartDependencyException(
+					CartFailureType.TIMEOUT,
+					response.message());
+		}
 		throw new CartDependencyException(
 				CartFailureType.UNAVAILABLE,
 				response.message() == null ? "购物车服务调用失败" : response.message());
+	}
+
+	private CartItemResponse toOrderCartItem(CartItemSnapshot snapshot) {
+		if (snapshot == null) {
+			throw new CartDependencyException(
+					CartFailureType.UNAVAILABLE,
+					"购物车服务返回了空商品项");
+		}
+		ProductStatus productStatus = parseProductStatus(snapshot.status());
+		return new CartItemResponse(
+				snapshot.productId(),
+				snapshot.productName(),
+				snapshot.productImageUrl(),
+				snapshot.price(),
+				snapshot.stock(),
+				productStatus,
+				snapshot.quantity(),
+				snapshot.selected(),
+				snapshot.valid(),
+				snapshot.invalidReason());
+	}
+
+	private ProductStatus parseProductStatus(String status) {
+		if (status == null || status.isBlank()) {
+			return null;
+		}
+		try {
+			return ProductStatus.valueOf(status);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new CartDependencyException(
+					CartFailureType.UNAVAILABLE,
+					"购物车服务返回了未知商品状态：" + status,
+					exception);
+		}
 	}
 
 	private CartDependencyException blocked(BlockException exception) {

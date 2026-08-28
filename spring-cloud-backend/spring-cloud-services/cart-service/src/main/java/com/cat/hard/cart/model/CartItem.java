@@ -2,6 +2,7 @@ package com.cat.hard.cart.model;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -14,16 +15,17 @@ public class CartItem {
 	private Long productId;
 	private Integer quantity;
 	private Boolean selected = true;
-	private LocalDateTime createdAt = LocalDateTime.now();
+	@JsonAlias("createdAt")
+	private LocalDateTime addedAt = LocalDateTime.now();
 
 	public CartItem() {
 	}
 
-	public CartItem(Long productId, Integer quantity, Boolean selected, LocalDateTime createdAt) {
+	public CartItem(Long productId, Integer quantity, Boolean selected, LocalDateTime addedAt) {
 		this.productId = productId;
 		this.quantity = quantity;
 		this.selected = selected;
-		this.createdAt = createdAt;
+		this.addedAt = addedAt;
 	}
 
 	public Long getProductId() {
@@ -50,12 +52,12 @@ public class CartItem {
 		this.selected = selected;
 	}
 
-	public LocalDateTime getCreatedAt() {
-		return createdAt;
+	public LocalDateTime getAddedAt() {
+		return addedAt;
 	}
 
-	public void setCreatedAt(LocalDateTime createdAt) {
-		this.createdAt = createdAt;
+	public void setAddedAt(LocalDateTime addedAt) {
+		this.addedAt = addedAt;
 	}
 
 	public String toJson() {

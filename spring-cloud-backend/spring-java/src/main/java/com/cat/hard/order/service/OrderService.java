@@ -10,13 +10,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cat.hard.auth.security.CurrentUser;
 import com.cat.hard.cart.dto.CartItemResponse;
-import com.cat.hard.cart.service.CartService;
 import com.cat.hard.common.error.ErrorCode;
 import com.cat.hard.common.exception.BusinessException;
 import com.cat.hard.common.service.TransactionCallbackService;
 import com.cat.hard.integration.account.dto.AddressSnapshot;
 import com.cat.hard.integration.account.dto.UserSummary;
 import com.cat.hard.integration.account.service.AccountQueryService;
+import com.cat.hard.integration.cart.service.CartQueryService;
 import com.cat.hard.order.calculator.OrderAmountCalculator;
 import com.cat.hard.order.dto.OrderCreateRequest;
 import com.cat.hard.order.dto.OrderDetailResponse;
@@ -47,7 +47,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.cat.hard.integration.cart.service.CartQueryService;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -155,7 +154,10 @@ public class OrderService {
 		createOrderCreateLog(order, userSummary);
 		registerOrderCreatedLogAfterCommit(order);
 		registerOrderTimeoutAfterCommit(order);
-		clearPurchasedCartItemsAfterCommit(order.getOrderNo(), selectedItems);
+		clearPurchasedCartItemsAfterCommit(
+				order.getOrderNo(),
+				order.getUserId(),
+				selectedItems);
 		return order;
 	}
 
@@ -272,6 +274,7 @@ public class OrderService {
 
 	private void clearPurchasedCartItemsAfterCommit(
 			String orderNo,
+			Long userId,
 			List<CartItemResponse> selectedItems) {
 
 		List<Long> productIds = new ArrayList<>();
@@ -281,7 +284,10 @@ public class OrderService {
 		List<Long> purchasedProductIds = List.copyOf(productIds);
 
 		transactionCallbackService.executeAfterCommit(
-				() -> clearPurchasedCartItems(orderNo, purchasedProductIds));
+				() -> clearPurchasedCartItems(
+						orderNo,
+						userId,
+						purchasedProductIds));
 	}
 
 	private void registerOrderTimeoutAfterCommit(Order order) {
@@ -313,9 +319,10 @@ public class OrderService {
 
 	private void clearPurchasedCartItems(
 			String orderNo,
+			Long userId,
 			List<Long> productIds) {
 		try {
-			cartQueryService.clearPurchasedItems(currentUser.getUserId(), productIds);
+			cartQueryService.clearPurchasedItems(userId, productIds);
 		}
 		catch (RuntimeException exception) {
 			log.warn("订单{}创建成功，但购物车清理失败", orderNo, exception);

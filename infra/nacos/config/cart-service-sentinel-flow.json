@@ -6,6 +6,14 @@
     "limitApp": "default",
     "strategy": 0,
     "controlBehavior": 0
+	},
+	{
+		"resource": "cart-query-single-product-summary",
+		"grade": 1,
+		"count": 50,
+		"limitApp": "default",
+		"strategy": 0,
+		"controlBehavior": 0
   },
   {
     "resource": "internal-cart-get-selected-items",
