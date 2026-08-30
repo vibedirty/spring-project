@@ -47,6 +47,7 @@ coverage/
 # Logs and process files
 *.log
 logs/
+.run-logs/
 *.pid
 *.pid.lock
 npm-debug.log*
